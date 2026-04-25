@@ -106,6 +106,28 @@ User input (natural language)
 
 ---
 
+## Relationship to Other Validation Patterns
+
+Several established patterns address the same problem — reducing the probability that an LLM produces wrong output in high-stakes contexts. Each has known limitations that motivated the design choices in this architecture.
+
+**Self-consistency** samples N outputs from the same model and selects the most frequent. It reduces variance but not correlation — all outputs share the same training biases.
+
+**Self-critique / Constitutional AI** has the model review its own output against a set of principles. It inherits the same epistemological problem as LLM-as-Judge: the tool that created the problem is being used to detect it.
+
+**LLM-as-Judge** uses a separate model to validate the output of the generator. It introduces an appearance of verification without adding real independence: a judge trained on similar data tends to approve exactly the plans it should catch. When it fails, it does so silently and with confidence — no explicit failure signal, nothing to feed back into the improvement loop.
+
+**Chain-of-thought with formal verification** forces explicit reasoning and then verifies it with deterministic tools. Promising, but only applicable where a formal verifier exists for the domain.
+
+**Retrieval-augmented validation** checks output against an external knowledge base. Quality depends entirely on the coverage and correctness of that base.
+
+**Multi-model ensemble** — the pattern this architecture builds on — is typically applied without a deterministic validation pipeline upstream of the comparison. Disagreement is measured on raw output, which means normalization problems produce false alarms and correlated errors go undetected.
+
+**Selective human-in-the-loop** uses model confidence to decide when to escalate. Scalable only if high-uncertainty cases remain a small minority.
+
+What distinguishes this architecture is the combination of channel redundancy with a deterministic, multi-stage validation pipeline before comparison. Each channel produces a canonical, fully validated plan before it reaches the comparator. Without that upstream validation, the comparison step is significantly weaker.
+
+---
+
 ## Known Limits
 
 This architecture reduces the probability of systematic errors and makes them visible when they occur. It does not eliminate certain categories of problems that are honest to acknowledge.
