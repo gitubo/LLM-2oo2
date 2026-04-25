@@ -133,7 +133,7 @@ Several established patterns address the same problem — reducing the probabili
 
 **Retrieval-augmented validation** checks output against an external knowledge base. Quality depends entirely on the coverage and correctness of that base.
 
-**Multi-model ensemble** — the pattern this architecture builds on — is typically applied without a deterministic validation pipeline upstream of the comparison. Disagreement is measured on raw output, which means normalization problems produce false alarms and correlated errors go undetected.
+**Multi-model ensemble** is typically applied without a deterministic validation pipeline upstream of the comparison. Disagreement is measured on raw output, which means normalization problems produce false alarms and correlated errors go undetected.
 
 **Selective human-in-the-loop** uses model confidence to decide when to escalate. Scalable only if high-uncertainty cases remain a small minority.
 
