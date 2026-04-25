@@ -4,6 +4,19 @@ A pipeline architecture for generating and validating structured action plans us
 
 ---
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Documentation](#documentation)
+- [Flow](#flow)
+- [Key Design Decisions](#key-design-decisions)
+- [Relationship to Other Validation Patterns](#relationship-to-other-validation-patterns)
+- [Known Limits](#known-limits)
+- [Open Areas](#open-areas)
+- [Design Philosophy](#design-philosophy)
+
+---
+
 ## Overview
 
 Large Language Models produce correct output with high probability, but not with certainty. In contexts where model output drives concrete actions on real systems, that residual error probability is not negligible.
