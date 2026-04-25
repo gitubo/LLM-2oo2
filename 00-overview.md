@@ -1,4 +1,4 @@
-# Architettura di Inferenza Validata per Generazione di Piani d'Azione
+# LLM-2oo2 o Architettura di Inferenza Validata per Generazione di Piani d'Azione
 
 ## Il problema che questa architettura affronta
 
