@@ -1,200 +1,193 @@
-# Architettura di Inferenza Validata per Generazione di Piani d'Azione
+# Validated Inference Architecture for Action Plan Generation
 
-## Il problema che questa architettura affronta
+## The problem this architecture addresses
 
-I Large Language Model sono strumenti potenti ma intrinsecamente probabilistici. Questa caratteristica, che li rende flessibili e capaci di ragionamento complesso, è anche la loro fragilità principale: producono output corretti con alta probabilità, ma non con certezza. In contesti dove l'output del modello viene usato per guidare azioni concrete su sistemi reali, quella probabilità residua di errore non è trascurabile.
+Large Language Models are powerful tools, but they are inherently probabilistic. This characteristic — the very thing that makes them flexible and capable of complex reasoning — is also their primary weakness: they produce correct output with high probability, but not with certainty. In contexts where model output drives concrete actions on real systems, that residual error probability is not negligible.
 
-Il problema si aggrava quando si considerano le caratteristiche degli errori dei LLM. Non si tratta di errori casuali e uniformemente distribuiti, come potrebbe essere il rumore in un segnale elettronico. Gli errori dei modelli linguistici sono sistematici e correlati: tendono a manifestarsi sulle stesse tipologie di input, a seguire gli stessi bias di training, a omettere le stesse categorie di informazione. Questo rende i meccanismi classici di ridondanza, pensati per errori indipendenti, meno efficaci di quanto ci si aspetterebbe in teoria.
+The problem compounds when you consider the nature of LLM errors. These are not random, uniformly distributed errors, like noise in an electronic signal. Language model errors are systematic and correlated: they tend to surface on the same types of input, follow the same training biases, and omit the same categories of information. This makes classical redundancy mechanisms — designed for independent errors — less effective in practice than theory would suggest.
 
-Il caso specifico che questa architettura affronta è la generazione automatizzata di piani d'azione strutturati: sequenze ordinate di task atomici, rappresentate come grafi diretti aciclici serializzati in JSON, che vengono poi eseguiti da un sistema a valle. Il vincolo fondamentale è che un piano errato non è solo un output di scarsa qualità, è un'istruzione sbagliata che verrà eseguita.
-
----
-
-## Lo spunto del 2oo2 e perché non lo seguiamo come riferimento normativo
-
-L'architettura prende ispirazione dal pattern 2oo2 (two-out-of-two) utilizzato nei sistemi safety-critical industriali, come quelli dell'avionica, del controllo ferroviario e degli impianti nucleari. In quel contesto, due canali indipendenti elaborano lo stesso input e il sistema procede solo se entrambi concordano. Il disaccordo è trattato come un segnale di pericolo, indipendentemente da quale dei due canali abbia ragione.
-
-Il principio è elegante: non è necessario sapere chi sbaglia, basta sapere che qualcosa non quadra per fermarsi.
-
-Tuttavia il 2oo2 industriale nasce in un contesto radicalmente diverso. I sistemi hardware ridondanti hanno errori genuinamente indipendenti: la probabilità che due transistor si guastino producendo lo stesso output sbagliato è trascurabile. Due LLM, anche se diversi per architettura e provider, condividono bias di training derivanti dallo stesso corpus di dati su cui è stato addestrato l'intero settore. La correlazione degli errori non è mai zero, e su certi tipi di input può essere molto alta.
-
-Questa architettura usa quindi il 2oo2 come punto di partenza concettuale, adattandolo in modo sostanziale per tenere conto delle specificità dei modelli linguistici: la correlazione degli errori, la difficoltà di definire "accordo" su output testuali, la necessità di normalizzare gli output prima del confronto, e la presenza di componenti deterministici che rompono la simmetria dei due canali.
+The specific case this architecture addresses is the automated generation of structured action plans: ordered sequences of atomic tasks, represented as directed acyclic graphs serialized as JSON, executed by a downstream system. The fundamental constraint is that a wrong plan is not merely low-quality output — it is a wrong instruction that will be executed.
 
 ---
 
-## Cosa questa architettura si propone di risolvere
+## The 2oo2 pattern and why we do not follow it as a normative reference
 
-L'obiettivo primario è ridurre la probabilità che un piano d'azione errato raggiunga l'esecuzione, mantenendo al tempo stesso una disponibilità del sistema accettabile. Questi due obiettivi sono in tensione: aumentare i controlli riduce la probabilità di errori ma aumenta la probabilità di blocchi, ritardi e falsi allarmi.
+This architecture draws inspiration from the 2oo2 (two-out-of-two) pattern used in safety-critical industrial systems, such as avionics, railway control, and nuclear plant management. In that context, two independent channels process the same input, and the system proceeds only if both agree. Disagreement is treated as a danger signal, regardless of which channel is correct.
 
-L'architettura non si propone di eliminare gli errori. Si propone di renderli visibili, categorizzati e gestibili, distinguendo tra errori che possono essere corretti automaticamente, errori che richiedono intervento umano, ed errori che sono segnali di un problema sistemico nel design.
+The principle is elegant: you do not need to know who is wrong — you only need to know that something does not add up in order to stop.
 
-Gli obiettivi secondari, ugualmente importanti, sono l'osservabilità e il miglioramento continuo. Un sistema che valida silenziosamente senza emettere metriche non permette di capire se sta funzionando o se sta degradando lentamente nel tempo. Un sistema che non usa i propri dati di produzione per migliorarsi resta fermo al punto di partenza.
+However, the industrial 2oo2 pattern was designed in a radically different context. Redundant hardware systems have genuinely independent failures: the probability that two transistors malfunction in a way that produces the same wrong output is negligible. Two LLMs — even ones that differ in architecture and provider — share training biases rooted in the same corpus of data that the entire field has been trained on. Error correlation is never zero, and for certain types of input it can be quite high.
 
----
-
-## I principi fondamentali su cui si basa
-
-**Separazione delle responsabilità per componente.** Ogni componente nella pipeline ha una responsabilità precisa e non si occupa di problemi che competono ad altri. Il validatore sintattico non ragiona sulla semantica, l'ottimizzatore non valida, il comparatore non corregge. Questa separazione rende ogni componente testabile in isolamento e il comportamento del sistema prevedibile.
-
-**Validazione progressiva.** Gli output dei modelli vengono validati in stadi successivi, ognuno dei quali assume che gli stadi precedenti abbiano già svolto il loro lavoro. Questo permette di applicare controlli progressivamente più costosi solo su materiale che ha già superato i controlli precedenti, e di produrre messaggi di errore precisi che indicano esattamente dove e perché qualcosa ha fallito.
-
-**Normalizzazione prima del confronto.** Il confronto tra i due canali avviene su piani canonici, non su output grezzi. Due piani semanticamente equivalenti ma espressi in forma diversa vengono ricondotti alla stessa rappresentazione prima del confronto, riducendo i falsi disaccordi che degraderebbero inutilmente la disponibilità del sistema.
-
-**Separazione tra decisioni semantiche e decisioni infrastrutturali.** Le scelte su cosa fare (quali task, in quale ordine, con quali vincoli) vengono prese nella parte di pianificazione della pipeline. Le scelte su come farlo fisicamente (quale endpoint, quale connessione, quale istanza) vengono prese dopo la validazione, quando il piano è già stato approvato. Questo evita che condizioni runtime transitorie inquinino la logica di validazione.
-
-**Osservabilità come proprietà di design, non come aggiunta successiva.** Ogni componente emette eventi strutturati con un trace_id comune che permette di ricostruire il percorso di un singolo input attraverso l'intera pipeline. Le metriche aggregate permettono di rilevare degrado prima che diventi un problema visibile agli utenti.
+This architecture therefore uses the 2oo2 pattern as a conceptual starting point, adapting it substantially to account for the specific characteristics of language models: correlated errors, the difficulty of defining "agreement" on structured output, the need to normalize output before comparison, and the presence of deterministic components that break the symmetry between the two channels.
 
 ---
 
-## Il flusso ad altissimo livello
+## What this architecture aims to solve
 
-Un input in linguaggio naturale entra nel sistema e viene processato in sequenza attraverso i seguenti macro-stadi:
+The primary objective is to reduce the probability that a wrong action plan reaches execution, while maintaining acceptable system availability. These two goals are in tension: adding more checks reduces the probability of errors but increases the probability of blocks, delays, and false alarms.
 
-**Comprensione dell'intent.** L'input viene trasformato da linguaggio naturale in una rappresentazione strutturata dell'obiettivo dell'utente. Questa rappresentazione non è un piano, è una specifica: descrive cosa l'utente vuole ottenere, con quali vincoli, con quale grado di certezza. Se l'input è genuinamente ambiguo, il sistema può chiedere chiarimento invece di procedere con un'interpretazione arbitraria.
+This architecture does not aim to eliminate errors. It aims to make them visible, categorized, and manageable — distinguishing between errors that can be corrected automatically, errors that require human intervention, and errors that are signals of a systemic design problem.
 
-**Costruzione del contesto per il Planner.** Il Capability Registry viene letto per estrarre le risorse rilevanti per la richiesta. Da esse viene costruito il system prompt del Planner: schema dei campi, azioni disponibili, operatori ammessi per ogni campo. Il Planner non riceve il registry completo ma solo le informazioni necessarie per la richiesta specifica. Questo vincola lo spazio delle scelte del modello prima ancora che la validazione intervenga.
-
-**Generazione parallela del piano.** Due modelli linguistici distinti, selezionati per minimizzare la correlazione degli errori, generano indipendentemente un piano d'azione a partire dallo stesso intent strutturato e dallo stesso contesto. Il piano prodotto è esplicito e non ottimizzato: ogni nodo trasversale è separato, nessuna ottimizzazione viene fatta dal Planner.
-
-**Pipeline di validazione per canale.** Ogni piano generato attraversa una pipeline di validazione che procede per stadi: una pre-validazione sintattica rapida che scarta output incomprensibili, un sanitizer che corregge piccole deviazioni recuperabili, una validazione sintattica completa tramite JSON Schema, una validazione semantica che verifica la coerenza del piano con l'intent, le regole di dominio, e lo schema delle risorse definito nel registry.
-
-**Ottimizzazione.** Il piano validato viene portato in forma canonica. I nodi trasversali che l'API esterna supporta nativamente, secondo quanto dichiarato nel Capability Registry, vengono collassati nel nodo contestuale precedente. I nodi rimanenti vengono normalizzati per eliminare varianti equivalenti che produrrebbero falsi disaccordi al confronto.
-
-**Binding logico.** Prima del confronto, ogni nodo contestuale viene arricchito con le informazioni di implementazione derivate dal registry: metodo HTTP, endpoint, convenzione di traduzione dei parametri. Nei casi con più implementazioni disponibili, la scelta viene guidata dai binding constraints dell'intent.
-
-**Confronto tra i canali.** I due piani canonici vengono confrontati. Se concordano, si procede. Se divergono, il sistema categorizza il disaccordo e decide il comportamento conseguente.
-
-**Binding fisico ed esecuzione.** Il piano concordato viene tradotto in istruzioni concrete eseguibili, risolvendo le risorse infrastrutturali disponibili in quel momento. Questa fase avviene dopo la validazione, in modo che condizioni runtime transitorie non influenzino le decisioni di pianificazione.
+The secondary objectives, equally important, are observability and continuous improvement. A system that silently validates without emitting metrics makes it impossible to tell whether it is working correctly or slowly degrading over time. A system that does not use its own production data to improve itself stays frozen at its initial state.
 
 ---
 
-## Schema del flusso
+## The foundational principles
+
+**Separation of responsibilities per component.** Every component in the pipeline has a precise responsibility and does not concern itself with problems belonging to other components. The syntactic validator does not reason about semantics; the optimizer does not validate; the comparator does not correct. This separation makes every component testable in isolation and the system's behavior predictable.
+
+**Progressive validation.** Model output is validated in successive stages, each of which assumes that prior stages have already done their work. This allows progressively more expensive checks to be applied only to material that has already passed earlier ones, and produces precise error messages that identify exactly where and why something failed.
+
+**Normalization before comparison.** Comparison between the two channels happens on canonical plans, not on raw output. Two semantically equivalent plans expressed in different forms are reduced to the same representation before comparison, reducing false disagreements that would unnecessarily degrade system availability.
+
+**Separation of semantic and infrastructure decisions.** Decisions about what to do — which tasks, in which order, with which constraints — are made during the planning phase of the pipeline. Decisions about how to do it physically — which endpoint, which connection, which instance — are made after validation, once the plan has already been approved. This prevents transient runtime conditions from contaminating the validation logic.
+
+**Observability as a design property, not an afterthought.** Every component emits structured events with a common trace_id that allows the path of a single input through the entire pipeline to be reconstructed. Aggregated metrics make it possible to detect degradation before it becomes visible to users.
+
+---
+
+## The high-level flow
+
+A natural language input enters the system and is processed sequentially through the following macro-stages:
+
+**Intent understanding.** The input is transformed from natural language into a structured representation of the user's objective. This representation is not a plan — it is a specification: it describes what the user wants to achieve, under which constraints, and with what degree of certainty. If the input is genuinely ambiguous, the system can request clarification rather than proceeding with an arbitrary interpretation.
+
+**Planner context construction.** The Capability Registry is read to extract the resources relevant to the request. From these, the Planner's system prompt is constructed: field schemas, available actions, permitted operators for each field. The Planner does not receive the full registry — only the information necessary for the specific request. This constrains the model's decision space before validation even intervenes.
+
+**Parallel plan generation.** Two distinct language models, selected to minimize error correlation, independently generate an action plan from the same structured intent and the same context. The produced plan is explicit and unoptimized: every transversal node is separate, and no optimization is performed by the Planner.
+
+**Per-channel validation pipeline.** Each generated plan passes through a validation pipeline that proceeds in stages: a fast syntactic pre-validation that discards incomprehensible output; a sanitizer that corrects small, recoverable deviations; a complete syntactic validation via JSON Schema; and a semantic validation that verifies the plan's coherence with the intent, domain rules, and the resource schemas defined in the registry.
+
+**Optimization.** The validated plan is brought into canonical form. Transversal nodes that the external API supports natively — as declared in the Capability Registry — are collapsed into the preceding contextual node. Remaining nodes are normalized to eliminate equivalent variants that would produce false disagreements during comparison.
+
+**Logical binding.** Before comparison, each contextual node is enriched with implementation information derived from the registry: HTTP method, endpoint, and parameter translation convention. In cases where multiple implementations are available, the choice is guided by the intent's binding constraints.
+
+**Channel comparison.** The two canonical plans are compared. If they agree, the system proceeds. If they diverge, the system categorizes the disagreement and decides the consequent behavior.
+
+**Physical binding and execution.** The agreed plan is translated into concrete, executable instructions by resolving the infrastructure resources available at that moment. This phase occurs after validation, so that transient runtime conditions do not influence planning decisions.
+
+---
+
+## Flow diagram
 
 ```
-Input utente (linguaggio naturale)
+User input (natural language)
            |
            v
    [ Intent Parser ]
-     Confidence < soglia?  -->  Clarification  -->  utente
+     Confidence < threshold?  -->  Clarification  -->  user
            |
            v
    [ LLM Prompt Builder ]  <--  Capability Registry
            |
-     (stesso contesto)
+     (same context)
      |             |
      v             v
- [ LLM A ]     [ LLM B ]        <-- modelli diversi, parallel
+ [ LLM A ]     [ LLM B ]        <- different models, parallel
      |             |
      v             v
 [ Pre-Validator ] [ Pre-Validator ]
-  fail?             fail?
-  | retry            | retry
+  fail? retry       fail? retry
      |             |
      v             v
-[ Sanitizer ]  [ Sanitizer ]    <-- correzioni recuperabili, loggato
+[ Sanitizer ]  [ Sanitizer ]
      |             |
      v             v
 [ Full Schema  [ Full Schema
-  Validator ]   Validator ]     <-- JSON Schema completo
-  fail?          fail?
-  | escalate      | escalate
+  Validator ]   Validator ]
+  fail? escalate   fail? escalate
      |             |
      v             v
 [ Semantic     [ Semantic
-  Validator ]   Validator ]     <-- regole dominio + registry
-  fail?          fail?
-  | escalate      | escalate
+  Validator ]   Validator ]
+  fail? escalate   fail? escalate
      |             |
      v             v
-[ Optimizer ]  [ Optimizer ]    <-- collasso nodi via registry
+[ Optimizer ]  [ Optimizer ]    <- node collapsing via registry
      |             |
      v             v
 [ Logical      [ Logical
-  Binding ]     Binding ]       <-- contratto HTTP da registry
+  Binding ]     Binding ]       <- HTTP contract from registry
      |             |
-     v             v
      +------+------+
             |
             v
-      [ Comparatore ]
-      disaccordo?  -->  categorizza  -->  retry / escalate / human review
+      [ Comparator ]
+      disagreement?  -->  retry / escalate / human review
             |
             v
-     Piano concordato
-            |
-            v
-   [ Physical Binding ]         <-- risoluzione risorse runtime
-     risorsa non disponibile?  -->  fallover loggato / errore esplicito
+   [ Physical Binding ]         <-- runtime resource resolution
+     resource unavailable?  -->  logged failover / explicit error
             |
             v
       [ Dispatcher ]
             |
             v
-         Esecuzione
+         Execution
 ```
 
-Il Capability Registry non è nella sequenza verticale perché non elabora il flusso: viene letto trasversalmente da LLM Prompt Builder, Semantic Validator, Optimizer, e Logical Binding. È una dipendenza di configurazione, non un componente di processing.
+The Capability Registry does not appear in the vertical sequence because it does not process the flow: it is read transversally by the LLM Prompt Builder, Semantic Validator, Optimizer, and Logical Binding. It is a configuration dependency, not a processing component.
 
 ---
 
-## Gestione degli errori
+## Error handling
 
-Gli errori nella pipeline sono trattati come eventi strutturati, non come eccezioni generiche. Ogni tipo di errore ha un comportamento definito:
+Errors in the pipeline are treated as structured events, not generic exceptions. Every error type has a defined behavior.
 
-La pre-validazione fallisce sul materiale irrecuperabile: se il modello non ha prodotto JSON valido con i campi fondamentali, il piano viene scartato e si richiede una nuova generazione. Non ha senso passare materiale incomprensibile ai componenti successivi.
+Pre-validation fails on unrecoverable material: if the model has not produced valid JSON with the fundamental fields present, the plan is discarded and a new generation is requested. There is no point in passing incomprehensible material to subsequent components.
 
-Il sanitizer agisce sui problemi recuperabili senza interrompere il flusso, ma logga ogni correzione applicata. Un'alta frequenza di correzioni su un campo specifico è un segnale che il prompt del modello ha un problema sistematico, non un errore occasionale.
+The sanitizer acts on recoverable problems without interrupting the flow, but logs every correction it applies. A high frequency of corrections on a specific field is a signal that the model's prompt has a systematic problem — not an occasional error.
 
-La validazione completa fallisce sul materiale che il sanitizer non ha potuto correggere. Questo fallimento porta a un'analisi strutturata: il piano era formalmente sbagliato in un modo che non era prevedibile dal design del sanitizer, e questo va investigato.
+Full validation fails on material that the sanitizer could not correct. This failure triggers a structured analysis: the plan was formally invalid in a way that was not anticipated by the sanitizer's design, and that warrants investigation.
 
-Il comparatore che rileva disaccordo tra i due canali non produce semplicemente un errore, produce una categorizzazione del disaccordo: strutturale, topologico, di binding logico. Questo permette di distinguere i casi dove il disaccordo è un segnale forte (i due modelli hanno interpretato l'intent in modo diverso) dai casi dove è rumore (piccole differenze di formulazione che l'ottimizzatore avrebbe dovuto normalizzare).
+When the comparator detects disagreement between the two channels, it does not simply produce an error — it produces a categorization of the disagreement: structural, topological, or logical binding. This makes it possible to distinguish cases where disagreement is a strong signal (the two models interpreted the intent differently) from cases where it is noise (minor phrasing differences that the optimizer should have normalized).
 
 ---
 
-## Osservabilità
+## Observability
 
-Ogni componente emette eventi strutturati che includono un trace_id comune, il nome del componente, il canale di appartenenza, l'esito, le correzioni o trasformazioni applicate, e la latenza. Questi eventi permettono di ricostruire il percorso di ogni singolo input attraverso la pipeline.
+Every component emits structured events that include a common trace_id, the component name, the channel it belongs to, the outcome, the corrections or transformations applied, and the latency. These events allow the path of every individual input through the pipeline to be reconstructed.
 
-Le metriche aggregate di interesse sono il tasso di correzione del sanitizer per regola, il tasso di disaccordo del comparatore per categoria, la distribuzione della confidence dell'intent parser, la latenza per stadio ai diversi percentili, e il tasso di escalation per motivo.
+The aggregated metrics of interest are: the sanitizer correction rate per rule, the comparator disagreement rate per category, the intent parser confidence distribution, per-stage latency at various percentiles, and the escalation rate by reason.
 
-Un sistema di alerting differenzia tra alert operativi, che segnalano un problema immediato, e alert di qualità, che segnalano un degrado lento che richiede attenzione ma non intervento d'emergenza.
+An alerting system distinguishes between operational alerts — signaling an immediate problem — and quality alerts — signaling a slow degradation that requires attention but not emergency response.
 
 ---
 
 ## Feedback loop
 
-I dati prodotti dalla pipeline in produzione alimentano un processo di miglioramento continuo che opera su tre ritmi temporali distinti.
+Data produced by the pipeline in production feeds a continuous improvement process that operates on three distinct time scales.
 
-In tempo reale, le soglie operative possono essere aggiustate automaticamente in risposta a condizioni anomale, come un picco nel tasso di escalation che suggerisce di abbassare temporaneamente la soglia di accettazione del comparatore.
+In real time, operational thresholds can be adjusted automatically in response to anomalous conditions — for example, a spike in the escalation rate that suggests temporarily lowering the comparator's acceptance threshold.
 
-Su base periodica, i log aggregati vengono analizzati per identificare pattern sistemici: correzioni ricorrenti del sanitizer, tipi di disaccordo frequenti, categorie di input con bassa confidence. Questi pattern guidano aggiornamenti ai prompt dei modelli, alle regole del sanitizer, e alle checklist del validatore semantico.
+On a periodic basis, aggregated logs are analyzed to identify systemic patterns: recurring sanitizer corrections, frequent disagreement types, input categories with low confidence. These patterns guide updates to model prompts, sanitizer rules, and semantic validator checklists.
 
-Su cicli lunghi, i cambiamenti alla tassonomia degli intent, allo schema JSON, e ai modelli LLM vengono gestiti con un processo formale che include test di regressione sul golden dataset.
+On longer cycles, changes to the intent taxonomy, the JSON schema, and the LLM models themselves are managed through a formal process that includes regression testing on the golden dataset.
 
-Il golden dataset, composto dai casi revisionati da esperti di dominio nel corso del tempo, è il patrimonio principale del sistema. Permette di misurare l'effetto di ogni modifica e di rilevare degrado dovuto a drift della distribuzione degli input o a cambiamenti nei comportamenti dei modelli forniti da terze parti.
-
----
-
-## I limiti che questa architettura non supera
-
-L'architettura riduce significativamente la probabilità di errori sistemici e li rende visibili quando si verificano. Non elimina alcune categorie di problemi che è onesto riconoscere.
-
-L'omissione concordata rimane il failure mode più insidioso: entrambi i modelli possono generare un piano plausibile e internamente coerente che omette lo stesso task critico, e il comparatore vederà accordo. La difesa, la checklist del validatore semantico, è efficace solo per le omissioni che si conosce a priori di dover controllare.
-
-La latenza cumulativa della pipeline è dell'ordine di 1-2 secondi prima che l'esecuzione inizi. Per piani che agiscono su stato mutabile, questo intervallo introduce una finestra temporale in cui il sistema potrebbe cambiare tra la pianificazione e l'esecuzione.
-
-La qualità dell'intera catena dipende in modo critico dalla qualità dell'intent parser, che è l'unico componente senza ridondanza. Un intent mal interpretato si propaga inalterato attraverso tutta la pipeline con la piena fiducia del sistema.
-
-Questi limiti sono documentati non perché non abbiano soluzioni parziali, ma perché conoscerli è necessario per valutare correttamente quando questa architettura è adatta al problema in esame e quando non lo è.
+The golden dataset — composed of cases reviewed by domain experts over time — is the system's most valuable asset. It makes it possible to measure the effect of every change and to detect degradation caused by input distribution drift or behavioral changes in models supplied by third parties.
 
 ---
 
-## Aree aperte non documentate
+## The limits this architecture does not overcome
 
-Un'area che questa documentazione non affronta in modo strutturato riguarda la validazione semantica dei piani che contengono azioni con side effect, ovvero operazioni che modificano stato in modo non reversibile come delete o update.
+This architecture significantly reduces the probability of systematic errors and makes them visible when they occur. It does not eliminate certain categories of problems, which it is honest to acknowledge.
 
-Per questi casi esiste un approccio basato su un secondo passaggio LLM — un componente che traduce il piano in linguaggio naturale e un secondo componente che confronta questa descrizione con l'intent originale per verificare la corrispondenza semantica. Il pattern è concettualmente vicino a quello dell'LLM-as-Judge analizzato nelle fasi iniziali del design, e condivide con esso sia i vantaggi che i limiti: funziona quando i due LLM hanno bassa correlazione e quando il componente di traduzione è rigorosamente vincolato a non inferire l'intent, ma resta vulnerabile agli errori concordati e alla possibilità che la descrizione del piano sia artificialmente vicina all'intent originale.
+Correlated omission remains the most insidious failure mode: both models can generate a plausible, internally coherent plan that omits the same critical task, and the comparator will see agreement. The defense — the semantic validator checklist — is effective only for omissions that are known in advance to require checking.
 
-La difesa alternativa più robusta per i side effect è deterministica: il Semantic Validator verifica che ogni piano con un nodo distruttivo abbia almeno un nodo filter esplicito e sufficientemente specifico a monte. Questa garanzia strutturale non valuta se il filter è quello semanticamente corretto, ma garantisce che l'operazione non operi sull'intera collection senza restrizioni.
+The cumulative pipeline latency is on the order of 1–2 seconds before execution begins. For plans acting on mutable state, this interval introduces a window during which the system could change between planning time and execution time.
 
-La scelta tra le due strategie, o la loro combinazione, dipende dal grado di criticità delle operazioni con side effect nel dominio specifico e dalla disponibilità ad accettare i costi di latenza e complessità del secondo passaggio LLM.
+The quality of the entire chain depends critically on the quality of the intent parser, which is the only component without redundancy. A misinterpreted intent propagates unchanged through the entire pipeline with the system's full confidence.
+
+These limits are documented not because they lack partial solutions, but because knowing them is necessary to correctly evaluate when this architecture is appropriate for the problem at hand and when it is not.
+
+---
+
+## Open areas not documented here
+
+One area this documentation does not address in a structured way is the semantic validation of plans containing actions with side effects — that is, operations that modify state in an irreversible way, such as delete or update.
+
+For these cases there is an approach based on a second LLM pass: one component translates the plan into natural language, and a second component compares this description with the original intent to verify semantic correspondence. The pattern is conceptually close to the LLM-as-Judge approach analyzed in the early design phases, and it shares both its advantages and its limitations: it works when the two LLMs have low correlation and when the translation component is strictly constrained not to infer intent, but it remains vulnerable to correlated errors and to the possibility that the plan description ends up artificially close to the original intent.
+
+The more robust alternative defense for side effects is deterministic: the Semantic Validator verifies that every plan containing a destructive node has at least one explicit, sufficiently specific filter node upstream. This structural guarantee does not evaluate whether the filter is semantically correct, but it ensures that the operation does not act on the entire collection without restrictions.
+
+The choice between these two strategies — or a combination of both — depends on how critical side-effect operations are in the specific domain, and on the willingness to accept the latency and complexity costs of the second LLM pass.

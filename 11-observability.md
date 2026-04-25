@@ -1,105 +1,105 @@
-# Modello di Osservabilità
+# Observability Model
 
-## Principio fondamentale
+## Fundamental principle
 
-L'osservabilità non è un layer che si aggiunge al sistema dopo che è stato progettato. È una proprietà che deve essere progettata dentro ogni componente dall'inizio. Questa affermazione, spesso ripetuta come principio astratto, ha una conseguenza pratica precisa: le informazioni necessarie per capire il comportamento del sistema devono essere emesse dai componenti stessi nel momento in cui elaborano i dati, non ricostruite dopo.
+Observability is not a layer added to the system after it has been designed. It is a property that must be designed into every component from the start. This statement, often repeated as an abstract principle, has a precise practical consequence: the information needed to understand system behavior must be emitted by the components themselves at the moment they process the data — not reconstructed after the fact.
 
-Aggiungere osservabilità dopo significa riaprire ogni componente per aggiungere logging e metriche, scoprendo spesso che alcune informazioni critiche non sono più disponibili nel punto in cui servirebbero perché erano state scartate o trasformate da elaborazioni precedenti.
-
----
-
-## I tre livelli
-
-L'osservabilità del sistema si struttura su tre livelli distinti che rispondono a domande diverse.
-
-Il logging risponde alla domanda "cosa è successo". Ogni componente emette eventi strutturati che descrivono le operazioni eseguite, le decisioni prese, e gli esiti. I log sono l'unica fonte di verità su cosa ha fatto il sistema su un input specifico.
-
-Le metriche rispondono alla domanda "quanto spesso succede e quanto ci vuole". Sono aggregazioni statistiche dei log che permettono di capire il comportamento del sistema nel tempo, identificare trend, e definire alert.
-
-Il tracing risponde alla domanda "come un singolo input ha attraversato il sistema". Permette di ricostruire il percorso completo di una singola richiesta attraverso tutti i componenti, correlando eventi che si sono verificati in momenti diversi e su componenti diversi.
+Adding observability retroactively means reopening every component to add logging and metrics, often discovering that some critical information is no longer available at the point where it is needed because it was discarded or transformed by earlier processing steps.
 
 ---
 
-## Il trace_id come elemento fondante
+## The three levels
 
-Ogni input che entra nel sistema riceve un trace_id nel momento in cui viene creato, prima ancora dell'Intent Parser. Questo identificatore viene propagato immutato attraverso tutti i componenti di tutta la pipeline, su entrambi i canali.
+The system's observability is structured across three distinct levels, each answering a different question.
 
-Il trace_id non deve essere generato internamente al sistema: deve essere fornito dal sistema chiamante. Questo permette di correlare il comportamento della pipeline di pianificazione con il comportamento del sistema che la chiama, ricostruendo scenari che attraversano confini di sistema.
+**Logging** answers the question "what happened." Every component emits structured events describing the operations performed, the decisions made, and the outcomes. Logs are the single source of truth about what the system did on a specific input.
 
-Ogni evento emesso da ogni componente include il trace_id come campo primario. Questo permette di aggregare tutti gli eventi relativi a una singola richiesta e ricostruire la sua storia completa.
+**Metrics** answer the question "how often does this happen and how long does it take." They are statistical aggregations of logs that make it possible to understand system behavior over time, identify trends, and define alerts.
 
----
-
-## Gli eventi per componente
-
-Ogni componente emette eventi strutturati con un insieme minimo di campi comuni: trace_id, nome del componente, canale di appartenenza (A o B, dove applicabile), timestamp, esito, e durata in millisecondi. A questi si aggiungono campi specifici del componente.
-
-L'Intent Parser emette la confidence della classificazione, il tipo di intent rilevato, il numero di ambiguità trovate, se è stato usato il path deterministico o il path LLM nel caso di approccio ibrido, e se è stata necessaria una richiesta di chiarimento.
-
-Il Pre-Validator emette solo l'esito e, in caso di fallimento, la categoria dell'errore.
-
-Il Sanitizer emette la lista completa delle correzioni applicate, ciascuna con il campo modificato, il valore originale, il valore applicato, la regola usata, e una stima della confidence della correzione.
-
-Il Full Schema Validator emette l'esito e, in caso di fallimento, la lista degli errori di validazione con i path JSON precisi.
-
-Il Semantic Validator emette l'esito, le regole verificate, e in caso di fallimento le regole violate con dettaglio.
-
-L'Optimizer emette le trasformazioni applicate, ciascuna con la regola usata e i nodi coinvolti.
-
-Il Logical Binding emette per ogni nodo la categoria selezionata, le categorie eliminate e i motivi dell'eliminazione.
-
-Il Comparatore emette il verdetto, il livello al quale è stato trovato il disaccordo, il diff strutturato, e la categorizzazione del disaccordo.
-
-Il Physical Binding emette per ogni nodo la risorsa nominale, la risorsa effettiva, e in caso di fallover il motivo.
+**Tracing** answers the question "how did a single input traverse the system." It makes it possible to reconstruct the complete path of a single request through all components, correlating events that occurred at different times and across different components.
 
 ---
 
-## Le metriche che contano
+## The trace_id as the foundational element
 
-Non tutte le metriche sono ugualmente utili. Il criterio di selezione è l'azionabilità: una metrica è utile se, quando mostra un'anomalia, suggerisce un'azione specifica.
+Every input that enters the system receives a `trace_id` at the moment it is created — before the Intent Parser. This identifier is propagated unchanged through all components of the entire pipeline, on both channels.
 
-Il tasso di correzione del Sanitizer per regola è la metrica più diagnostica per la qualità dei modelli LLM. Una regola che corregge frequentemente segnala un problema sistematico nel prompt che ha una soluzione diretta.
+The `trace_id` must not be generated internally by the system: it must be provided by the calling system. This makes it possible to correlate the behavior of the planning pipeline with the behavior of the system that calls it, reconstructing scenarios that cross system boundaries.
 
-La distribuzione della confidence dell'Intent Parser, in particolare i percentili bassi, rivela la frequenza dei casi edge non coperti dalla tassonomia degli intent. Un peggioramento del p5 nel tempo indica che il dominio degli input sta evolvendo oltre le aspettative del design.
-
-Il tasso di disaccordo del Comparatore per categoria è l'indicatore di salute della pipeline nel suo insieme. Un tasso stabile è rassicurante. Un aumento del tasso di disaccordo topologico può segnalare un aggiornamento di versione di uno dei modelli che ha cambiato il comportamento. Un aumento del tasso di disaccordo di binding può segnalare un'inconsistenza nel modo in cui i due modelli producono i binding constraints.
-
-La latenza per stadio ai percentili p50, p95, e p99 permette di identificare i colli di bottiglia e di pianificare i timeout in modo realistico. Il p99 è più importante della media per questa analisi.
-
-Il tasso di escalation per motivo mostra dove il sistema ha bisogno di intervento umano con più frequenza. Un tasso di escalation elevato per comparator_disagree suggerisce che la normalizzazione dell'Optimizer non è sufficiente per il dominio corrente.
+Every event emitted by every component includes the `trace_id` as a primary field. This makes it possible to aggregate all events related to a single request and reconstruct its complete history.
 
 ---
 
-## La differenza tra alert operativi e alert di qualità
+## Events per component
 
-Gli alert operativi segnalano un problema che richiede intervento immediato. Il sistema non sta funzionando o sta funzionando in modo degradato in modo visibile agli utenti. Esempi: latenza p99 oltre la soglia di timeout, tasso di errore al Pre-Validator oltre il 20%, tasso di escalation oltre il 30%.
+Every component emits structured events with a minimum set of common fields: `trace_id`, component name, channel (A or B, where applicable), timestamp, outcome, and duration in milliseconds. To these are added component-specific fields.
 
-Gli alert di qualità segnalano un degrado lento che non è ancora visibile agli utenti ma richiede attenzione nel breve-medio termine. Non svegliano nessuno di notte ma vengono esaminati nella routine di manutenzione. Esempi: confidence dell'Intent Parser in calo del 10% nel corso di una settimana, tasso di correzione del Sanitizer su un campo specifico in aumento del 50% rispetto alla settimana precedente, apparizione di una nuova categoria di disaccordo al Comparatore non vista in precedenza.
+**Intent Parser** emits: classification confidence, detected intent type, number of ambiguities found, whether the deterministic or LLM path was used in the hybrid approach, and whether a clarification request was necessary.
 
-La distinzione è importante perché i due tipi di alert richiedono processi di risposta diversi e hanno soglie diverse.
+**Pre-Validator** emits only the outcome and, in case of failure, the error category.
 
----
+**Sanitizer** emits the complete list of corrections applied, each with the modified field, the original value, the applied value, the rule used, and an estimated confidence for the correction.
 
-## Il canary system
+**Full Schema Validator** emits the outcome and, in case of failure, the list of validation errors with precise JSON paths.
 
-Una piccola percentuale del traffico reale, dell'ordine del 5-10%, viene continuamente valutata in shadow mode contro il golden dataset: i piani prodotti vengono confrontati con i piani attesi per quel tipo di input, e il tasso di corrispondenza viene monitorato come metrica di qualità.
+**Semantic Validator** emits the outcome, the rules checked, and in case of failure the violated rules with detail.
 
-Il canary system è l'unico meccanismo che permette di rilevare il degrado lento del sistema prima che diventi visibile. La distribuzione degli input in produzione cambia nel tempo, i modelli LLM vengono aggiornati dai fornitori, le regole di dominio invecchiano. Senza un sistema di monitoraggio continuo della qualità effettiva, questi cambiamenti sono invisibili finché non producono un problema visibile.
+**Optimizer** emits the transformations applied, each with the rule used and the nodes involved.
 
----
+**Logical Binding** emits, for each node, the selected category, the eliminated categories, and the reasons for elimination.
 
-## La correlazione tra osservabilità e feedback loop
+**Comparator** emits the verdict, the level at which disagreement was found, the structured diff, and the disagreement categorization.
 
-I dati di osservabilità sono la materia prima del feedback loop. Senza eventi strutturati e metriche aggregate non è possibile identificare sistematicamente dove e come migliorare il sistema.
-
-La relazione va progettata esplicitamente: quali metriche alimentano quali decisioni di miglioramento, con quale frequenza, e con quale processo di review. Un dato di osservabilità che viene emesso ma non viene mai letto o usato è rumore, non informazione.
+**Physical Binding** emits, for each node, the nominal resource, the actual resource used, and in case of failover the reason.
 
 ---
 
-## Punti aperti
+## The metrics that matter
 
-La scelta degli strumenti di raccolta, aggregazione, e visualizzazione dei dati di osservabilità è ortogonale al design del sistema ma ha impatti pratici significativi. Sistemi di osservabilità eccessivamente complessi tendono a non essere usati; sistemi troppo semplici non forniscono le informazioni necessarie.
+Not all metrics are equally useful. The selection criterion is actionability: a metric is useful if, when it shows an anomaly, it suggests a specific action.
 
-La retention dei log strutturati deve essere bilanciata con i costi di storage. Log ad alta frequenza con molto dettaglio sono necessari per il debugging di casi specifici ma costosi da mantenere a lungo termine. Una strategia di retention differenziata per livello di dettaglio e per esito (tenere più a lungo i log degli errori rispetto a quelli dei successi) è comune ma richiede design esplicito.
+**The Sanitizer correction rate per rule** is the most diagnostic metric for LLM model quality. A rule that corrects frequently signals a systematic problem in the prompt that has a direct solution.
 
-Il GDPR e i requisiti di privacy possono imporre vincoli sulla durata della retention e sul contenuto dei log. Se gli input degli utenti contengono dati personali, la pipeline deve garantire che questi non vengano loggati in chiaro o che vengano anonimizzati prima della persistenza. Questo va considerato nel design dell'osservabilità, non aggiunto dopo.
+**The distribution of Intent Parser confidence**, in particular the low percentiles, reveals the frequency of edge cases not covered by the intent taxonomy. A worsening p5 over time indicates that the input domain is evolving beyond the design's expectations.
+
+**The Comparator disagreement rate per category** is the overall health indicator of the pipeline. A stable rate is reassuring. An increase in the topological disagreement rate may signal a model version update that changed behavior. An increase in the binding disagreement rate may signal an inconsistency in the way the two models produce binding constraints.
+
+**Per-stage latency at the p50, p95, and p99 percentiles** makes it possible to identify bottlenecks and plan timeouts realistically. The p99 is more important than the mean for this analysis.
+
+**The escalation rate by reason** shows where the system most frequently requires human intervention. A high escalation rate for `comparator_disagree` suggests that the Optimizer's normalization is insufficient for the current domain.
+
+---
+
+## The difference between operational alerts and quality alerts
+
+**Operational alerts** signal a problem requiring immediate action. The system is not functioning or is functioning in a visibly degraded manner for users. Examples: p99 latency above the timeout threshold, Pre-Validator error rate above 20%, escalation rate above 30%.
+
+**Quality alerts** signal a slow degradation that is not yet visible to users but requires attention in the near-to-medium term. They do not wake anyone up at night but are examined during routine maintenance. Examples: Intent Parser confidence declining 10% over the course of a week, Sanitizer correction rate on a specific field increasing 50% compared to the previous week, appearance of a new disagreement category at the Comparator not previously seen.
+
+The distinction is important because the two types of alert require different response processes and have different thresholds.
+
+---
+
+## The canary system
+
+A small percentage of real traffic — on the order of 5–10% — is continuously evaluated in shadow mode against the golden dataset: the plans produced are compared with the expected plans for that type of input, and the match rate is monitored as a quality metric.
+
+The canary system is the only mechanism that makes it possible to detect slow system degradation before it becomes visible. The distribution of inputs in production changes over time, LLM models are updated by providers, and domain rules age in response to business changes. Without a continuous quality monitoring system, these changes are invisible until they produce a visible problem.
+
+---
+
+## The correlation between observability and the feedback loop
+
+Observability data is the raw material of the feedback loop. Without structured events and aggregated metrics it is not possible to systematically identify where and how to improve the system.
+
+This relationship must be designed explicitly: which metrics feed which improvement decisions, at what frequency, and with what review process. An observability data point that is emitted but never read or used is noise, not information.
+
+---
+
+## Open questions
+
+The choice of tools for collecting, aggregating, and visualizing observability data is orthogonal to system design but has significant practical impacts. Excessively complex observability systems tend not to be used; excessively simple ones do not provide the necessary information.
+
+The retention of structured logs must be balanced against storage costs. High-frequency logs with a lot of detail are necessary for debugging specific cases but expensive to maintain long-term. A differentiated retention strategy by level of detail and by outcome — keeping error logs longer than success logs — is common but requires explicit design.
+
+GDPR and privacy requirements may impose constraints on retention duration and log content. If user inputs contain personal data, the pipeline must ensure they are not logged in plain text, or that they are anonymized before persistence. This must be considered in the observability design, not added afterward.

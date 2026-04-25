@@ -1,95 +1,95 @@
-# Comparatore
+# Comparator
 
-## Scopo
+## Purpose
 
-Il Comparatore è il punto di convergenza dell'architettura 2oo2. Riceve i due piani canonici arricchiti con binding logico prodotti dai due canali paralleli e determina se concordano. Se concordano, il sistema ha raggiunto sufficiente fiducia per procedere. Se divergono, il sistema deve prendere una decisione su come gestire il disaccordo.
+The Comparator is the convergence point of the 2oo2 architecture. It receives the two canonical plans enriched with logical binding produced by the two parallel channels and determines whether they agree. If they agree, the system has reached sufficient confidence to proceed. If they diverge, the system must decide how to handle the disagreement.
 
-La premessa fondamentale del Comparatore è che il disaccordo tra due canali indipendenti è un segnale informativo, non necessariamente un errore. Indica che il problema era abbastanza difficile o ambiguo da produrre risposte diverse in due elaborazioni indipendenti.
-
----
-
-## Cosa misura il Comparatore
-
-Il Comparatore non misura la correttezza. Misura la consistenza tra i due canali. Questa distinzione è importante e spesso fraintesa.
-
-Un sistema con alta consistenza non è necessariamente un sistema corretto: due canali possono concordare su un piano sbagliato. Un sistema con bassa consistenza non è necessariamente un sistema che sbaglia: può solo avere due canali con stili di generazione molto diversi che producono rappresentazioni diverse di piani equivalenti (che l'Optimizer avrebbe dovuto normalizzare).
-
-La consistenza è una proxy della correttezza, non una misura diretta. È una proxy utile perché, in presenza di canali sufficientemente indipendenti, alta consistenza è correlata positivamente con correttezza. Ma il legame non è diretto e va tenuto presente quando si interpretano le metriche.
+The Comparator's fundamental premise is that disagreement between two independent channels is an informative signal — not necessarily an error. It indicates that the problem was difficult or ambiguous enough to produce different responses in two independent elaborations.
 
 ---
 
-## I livelli di confronto
+## What the Comparator measures
 
-Il confronto avviene su più livelli con severità crescente. La scelta del livello dipende dal dominio e dalla tolleranza al falso allarme.
+The Comparator does not measure correctness. It measures consistency between the two channels. This distinction is important and frequently misunderstood.
 
-Il confronto strutturale verifica che i due piani abbiano lo stesso numero di nodi e la stessa struttura macro. È il confronto più grossolano e meno soggetto a falsi disaccordi.
+A highly consistent system is not necessarily a correct one: two channels can agree on a wrong plan. A system with low consistency is not necessarily one that makes errors: it may simply have two channels with very different generation styles that produce different representations of equivalent plans — representations that the Optimizer should have normalized.
 
-Il confronto topologico verifica che il grafo delle dipendenze sia identico: gli stessi nodi, nelle stesse relazioni, con lo stesso ordine relativo. Due piani con gli stessi task ma dipendenze diverse sono piani diversi anche se hanno la stessa struttura macro.
-
-Il confronto dei parametri verifica che i parametri di ogni nodo corrispondente siano identici. Questo è il livello più sensibile ai falsi disaccordi dovuti a variazioni di stile nella generazione.
-
-Il confronto del binding logico verifica che la categoria di implementazione scelta per ogni nodo sia identica. Un disaccordo qui può indicare che i binding constraints dei due piani erano diversi, il che è a sua volta un segnale di inconsistenza nella generazione.
+Consistency is a proxy for correctness, not a direct measure of it. It is a useful proxy because, in the presence of sufficiently independent channels, high consistency is positively correlated with correctness. But the link is not direct, and this must be kept in mind when interpreting metrics.
 
 ---
 
-## La categorizzazione del disaccordo
+## Levels of comparison
 
-Quando il Comparatore rileva un disaccordo, non si limita a segnalarlo: lo categorizza. La categorizzazione è essenziale per decidere come gestirlo e per analizzare i pattern nel tempo.
+Comparison happens across multiple levels with increasing strictness. The choice of level depends on the domain and the tolerance for false alarms.
 
-Un disaccordo strutturale (numero di nodi diverso) è tipicamente il più serio: i due modelli hanno prodotto piani con complessità diversa, il che suggerisce interpretazioni sostanzialmente diverse dell'intent.
+**Structural comparison** verifies that the two plans have the same number of nodes and the same macro-structure. It is the coarsest comparison and the least prone to false disagreements.
 
-Un disaccordo topologico (stessi nodi ma dipendenze diverse) può indicare un'omissione in uno dei due piani, oppure può essere un caso borderline dove entrambi gli ordini sono validi ma l'Optimizer non li ha normalizzati. Distinguere questi casi richiede analisi.
+**Topological comparison** verifies that the dependency graph is identical: the same nodes, in the same relationships, in the same relative order. Two plans with the same tasks but different dependencies are different plans even if they have the same macro-structure.
 
-Un disaccordo sui parametri può essere rumore (piccole differenze di formulazione) o può essere sostanziale (un filtro con operatore diverso, un limite numerico diverso). L'analisi del diff specifico è necessaria.
+**Parameter comparison** verifies that the parameters of each corresponding node are identical. This is the most sensitive level to false disagreements caused by generation style variations.
 
-Un disaccordo sul binding logico è spesso un segnale di inconsistenza nei binding constraints prodotti dai due modelli, che merita investigazione specifica.
-
----
-
-## Il comportamento in caso di disaccordo
-
-Il Comparatore non prende decisioni autonome sul da farsi quando rileva disaccordo. Produce un evento strutturato con il tipo di disaccordo, il diff dettagliato, e la categorizzazione, e il sistema di orchestrazione decide il comportamento conseguente basandosi su regole configurate.
-
-I comportamenti tipici in caso di disaccordo sono: retry di entrambi i canali (se il disaccordo potrebbe essere dovuto a variabilità casuale), retry del solo canale con più correzioni del Sanitizer (potenzialmente quello meno affidabile), escalazione verso revisione umana, o nel caso di piani strutturalmente diversi, rifiuto dell'intera operazione.
-
-Non esiste una risposta corretta universale: la politica di gestione del disaccordo dipende dal dominio, dalla criticità dell'operazione, e dalla disponibilità di un operatore umano.
+**Logical binding comparison** verifies that the implementation category chosen for each node is identical. A disagreement here may indicate that the binding constraints of the two plans were different, which is itself a signal of inconsistency in generation.
 
 ---
 
-## Il falso allarme e la disponibilità del sistema
+## Categorizing the disagreement
 
-Il falso allarme è il caso in cui il Comparatore rileva un disaccordo tra piani semanticamente equivalenti che l'Optimizer non ha normalizzato. Questo produce un blocco inutile che degrada la disponibilità del sistema senza corrispondere a un problema reale.
+When the Comparator detects a disagreement, it does not merely flag it — it categorizes it. Categorization is essential for deciding how to handle it and for analyzing patterns over time.
 
-Il tasso di falso allarme è il principale determinante della disponibilità del sistema: se il Comparatore genera disaccordo frequentemente su piani che sarebbero stati eseguiti correttamente, il sistema è inutilizzabile in produzione anche se tecnicamente funziona.
+A **structural disagreement** (different number of nodes) is typically the most serious: the two models produced plans of different complexity, which suggests substantially different interpretations of the intent.
 
-Ridurre il tasso di falso allarme è responsabilità dell'Optimizer, che deve garantire che varianti equivalenti producano lo stesso piano canonico. Ma l'Optimizer ha limiti: non può catturare tutte le possibili equivalenze, e alcune differenze di stile nella generazione non sono normalizzabili senza rischiare trasformazioni lossy.
+A **topological disagreement** (same nodes but different dependencies) may indicate an omission in one of the two plans, or it may be a borderline case where both orderings are valid but the Optimizer failed to normalize them. Distinguishing these cases requires analysis.
 
-Il monitoraggio del tasso di falso allarme è quindi critico per la salute del sistema. Un aumento del tasso suggerisce che i modelli hanno cambiato stile di generazione (aggiornamento di versione) o che sono emersi nuovi pattern di input non coperti dall'Optimizer.
+A **parameter disagreement** may be noise (small phrasing differences) or may be substantive (a filter with a different operator, a different numeric limit). Analyzing the specific diff is necessary.
 
----
-
-## Esempio pratico
-
-Canale A produce: [fetch(orders), filter(status=confirmed), filter(amount>100), sort(created_at DESC), limit(10)]. Canale B produce: [fetch(orders), filter(amount>100 AND status=confirmed), sort(created_at DESC), limit(10)].
-
-L'Optimizer del canale A ha normalizzato i due filter ma non li ha collassati perché la regola di collasso non era presente. L'Optimizer del canale B ha ricevuto un piano già con i filter collassati dal modello.
-
-Il Comparatore vede un disaccordo strutturale: il piano A ha 5 nodi, il piano B ne ha 4. Categorizza il disaccordo come strutturale con nota "differenza nel numero di nodi filter". L'analisi rivela che si tratta di varianti equivalenti e il caso viene usato per aggiungere la regola di collasso all'Optimizer.
+A **logical binding disagreement** is often a signal of inconsistency in the binding constraints produced by the two models, and warrants specific investigation.
 
 ---
 
-## Pro dell'approccio
+## Behavior in case of disagreement
 
-Il Comparatore trasforma il disaccordo in informazione strutturata. Non è solo un gate che blocca, è uno strumento diagnostico che nel tempo rivela dove il sistema ha maggiore variabilità e dove le regole di normalizzazione sono incomplete.
+The Comparator does not make autonomous decisions when it detects disagreement. It produces a structured event containing the disagreement type, a detailed diff, and the categorization — and the orchestration system decides the consequent behavior based on configured rules.
 
-Il fatto che il confronto avvenga su piani canonici già validati significa che il Comparatore può fare confronti semplici e deterministici, senza dover ragionare su strutture eterogenee o applicare giudizi soggettivi.
+Typical behaviors in case of disagreement include: retrying both channels (if the disagreement may be due to random variability), retrying only the channel with more Sanitizer corrections (potentially the less reliable one), escalating to human review, or — in the case of structurally different plans — refusing the entire operation.
+
+There is no universally correct answer: the disagreement handling policy depends on the domain, the criticality of the operation, and the availability of a human operator.
 
 ---
 
-## Contro, dubbi e punti aperti
+## False alarms and system availability
 
-Il Comparatore misura consistenza, non correttezza. Questo limite strutturale non ha soluzione nell'ambito del 2oo2: è intrinseco al pattern. La difesa è il Semantic Validator a monte, che cattura le inconsistenze semantiche prima che raggiungano il Comparatore.
+A false alarm is the case where the Comparator detects a disagreement between semantically equivalent plans that the Optimizer failed to normalize. This produces an unnecessary block that degrades system availability without corresponding to a real problem.
 
-La politica di gestione del disaccordo è parametrizzabile ma non universale. Definire la risposta corretta a ogni tipo di disaccordo richiede conoscenza del dominio e dell'uso che viene fatto del sistema, e cambia nel tempo man mano che si accumula esperienza.
+The false alarm rate is the primary determinant of system availability: if the Comparator frequently generates disagreements on plans that would have been executed correctly, the system is unusable in production even if it technically works.
 
-Un punto aperto riguarda i casi dove uno dei due canali non raggiunge il Comparatore perché bloccato da un fallimento nella propria pipeline. In quel momento il sistema ha un solo piano validato. Procedere con un solo piano o bloccare completamente? La risposta dipende dal grado di fiducia che si ha nel singolo canale e dalla criticità dell'operazione, ed è una decisione che va presa esplicitamente nel design del sistema.
+Reducing the false alarm rate is the Optimizer's responsibility — it must ensure that equivalent variants produce the same canonical plan. But the Optimizer has limits: it cannot capture all possible equivalences, and some generation style differences are not normalizable without risking lossy transformations.
+
+Monitoring the false alarm rate is therefore critical to system health. An increase in the rate suggests that the models have changed their generation style (a version update) or that new input patterns have emerged that the Optimizer does not cover.
+
+---
+
+## Practical example
+
+Channel A produces: `[fetch(orders), filter(status=confirmed), filter(amount>100), sort(created_at DESC), limit(10)]`. Channel B produces: `[fetch(orders), filter(amount>100 AND status=confirmed), sort(created_at DESC), limit(10)]`.
+
+Channel A's Optimizer normalized the two filters but did not collapse them because the collapse rule was not present. Channel B's Optimizer received a plan that the model had already produced with the filters collapsed.
+
+The Comparator sees a structural disagreement: plan A has 5 nodes, plan B has 4. It categorizes the disagreement as structural with the note "difference in number of filter nodes." Analysis reveals this to be equivalent variants, and the case is used to add the collapse rule to the Optimizer.
+
+---
+
+## Advantages of this approach
+
+The Comparator transforms disagreement into structured information. It is not just a gate that blocks — it is a diagnostic tool that over time reveals where the system has the most variability and where normalization rules are incomplete.
+
+The fact that comparison happens on already-validated canonical plans means the Comparator can perform simple, deterministic comparisons without needing to reason about heterogeneous structures or apply subjective judgment.
+
+---
+
+## Drawbacks, open questions, and known issues
+
+The Comparator measures consistency, not correctness. This structural limitation has no solution within the 2oo2 pattern — it is intrinsic to it. The defense is the Semantic Validator upstream, which catches semantic inconsistencies before they reach the Comparator.
+
+The disagreement handling policy is configurable but not universal. Defining the correct response to each type of disagreement requires domain knowledge and understanding of how the system is used, and changes over time as experience accumulates.
+
+An open question concerns cases where one of the two channels does not reach the Comparator because it was blocked by a failure in its own pipeline. At that point the system has only one validated plan. Should it proceed with one plan or block entirely? The answer depends on the confidence level in a single channel and the criticality of the operation, and must be decided explicitly during system design.

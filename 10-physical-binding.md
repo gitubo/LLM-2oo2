@@ -1,83 +1,83 @@
 # Physical Binding
 
-## Scopo
+## Purpose
 
-Il Physical Binding è il componente che traduce il piano concordato, con il suo binding logico già definito, in un piano concretamente eseguibile. Dove il Logical Binding aveva stabilito quale categoria di implementazione usare per ogni nodo, il Physical Binding stabilisce quale risorsa fisica specifica usare in questo momento: quale istanza del database, quale endpoint dell'API, quale nodo del cluster di cache.
+Physical Binding is the component that translates the agreed plan — with its logical binding already defined — into a concretely executable plan. Where Logical Binding established which implementation category to use for each node, Physical Binding establishes which specific physical resource to use right now: which database instance, which API endpoint, which node in the cache cluster.
 
-Opera dopo il Comparatore, in un momento in cui il piano ha già ricevuto la validazione dell'intera pipeline. Questo posizionamento è una scelta progettuale deliberata: le condizioni runtime non devono influenzare le decisioni di pianificazione e validazione.
-
----
-
-## Perché avviene dopo il Comparatore
-
-La motivazione principale è che le condizioni runtime sono per natura non deterministiche e mutevoli. Includere decisioni infrastrutturali nella fase di validazione significherebbe che un timeout di rete, un failover, o una variazione di carico potrebbero produrre risoluzioni diverse sui due canali, creando disaccordi al Comparatore che non hanno nulla a che fare con la qualità del piano.
-
-Il Logical Binding garantisce che la categoria di implementazione sia stata scelta in modo deterministico e comparabile. Il Physical Binding poi risolve, una sola volta, quale risorsa fisica di quella categoria usare in questo specifico momento.
+It operates after the Comparator, at a point where the plan has already received validation from the entire pipeline. This positioning is a deliberate design choice: runtime conditions must not influence planning and validation decisions.
 
 ---
 
-## Cosa fa concretamente
+## Why it occurs after the Comparator
 
-Per ogni nodo del piano concordato, il Physical Binding legge la categoria di implementazione stabilita dal Logical Binding e risolve la risorsa fisica appropriata usando la conoscenza dello stato corrente del sistema.
+The main motivation is that runtime conditions are inherently non-deterministic and mutable. Including infrastructure decisions in the validation phase would mean that a network timeout, a failover, or a load variation could produce different resolutions on the two channels, creating disagreements at the Comparator that have nothing to do with the quality of the plan.
 
-Per una categoria database_primary, potrebbe risolvere al database primario se è disponibile, oppure a una replica in lettura se il primario è sotto manutenzione, con segnalazione esplicita del fallover nel log.
-
-Per una categoria cache_layer, risolve all'istanza di cache appropriata per quella entità e verifica che il TTL residuo sia compatibile con i vincoli di freschezza dell'intent (se presenti).
-
-Per una categoria service, risolve all'endpoint del servizio disponibile, gestendo eventuali meccanismi di load balancing e circuit breaker.
+Logical Binding ensures that the implementation category was chosen in a deterministic and comparable way. Physical Binding then resolves — once, after agreement — which physical resource of that category to use at this specific moment.
 
 ---
 
-## Il fallover e la sua visibilità
+## What it does concretely
 
-Il Physical Binding è il luogo dove i fallover infrastrutturali si materializzano. Quando la risorsa preferita non è disponibile e viene usata un'alternativa, questo evento deve essere loggato in modo esplicito e strutturato, non gestito silenziosamente.
+For each node in the agreed plan, Physical Binding reads the implementation category established by Logical Binding and resolves the appropriate physical resource using current knowledge of the system's state.
 
-Un fallover silenzioso è pericoloso perché il piano viene eseguito su una risorsa diversa da quella nominale, il che può avere implicazioni sulla correttezza o sulla freschezza dei dati, e nessun componente a valle ne è consapevole.
+For a `database_primary` category, it might resolve to the primary database if available, or to a read replica if the primary is under maintenance, with an explicit log entry for the failover.
 
-Il log del Physical Binding deve includere per ogni nodo la categoria richiesta, la risorsa nominale, la risorsa effettivamente usata, e in caso di fallover il motivo. Queste informazioni permettono di correlare eventuali anomalie nell'output con condizioni infrastrutturali al momento dell'esecuzione.
+For a `cache_layer` category, it resolves to the appropriate cache instance for that entity and verifies that the remaining TTL is compatible with the freshness constraints in the intent (if present).
 
----
-
-## La finestra temporale tra validazione e esecuzione
-
-Il Physical Binding opera dopo una pipeline che ha una latenza cumulativa dell'ordine di 1-2 secondi. Questo significa che esiste sempre una finestra temporale tra il momento in cui il piano è stato validato e il momento in cui viene risolto fisicamente e poi eseguito.
-
-In questa finestra, lo stato del sistema può cambiare: una risorsa può diventare non disponibile, un dato può essere aggiornato, un lock può essere acquisito da un altro processo. Il Physical Binding gestisce i cambiamenti infrastrutturali (la risorsa è disponibile o no), ma non può gestire i cambiamenti di stato dei dati che il piano andrà a leggere o modificare.
-
-Questo è un limite intrinseco dell'architettura che va riconosciuto e documentato. Per operazioni che richiedono consistenza assoluta, serve una strategia a livello di esecuzione (transazioni, lock espliciti) che non è gestita dalla pipeline di pianificazione.
+For a `service` category, it resolves to the available service endpoint, handling any load balancing and circuit breaker mechanisms.
 
 ---
 
-## La relazione con l'esecuzione
+## Failover and its visibility
 
-Il Physical Binding produce come output un piano eseguibile: una struttura che contiene per ogni nodo non solo cosa fare e con quale categoria di implementazione, ma i dettagli concreti della risorsa (connection string, endpoint URL, parametri di connessione) necessari per avviare l'esecuzione.
+Physical Binding is where infrastructure failovers materialize. When the preferred resource is unavailable and an alternative is used, this event must be logged explicitly and in a structured way — not handled silently.
 
-Questo output è il confine tra la pipeline di pianificazione e il sistema di esecuzione. Il sistema di esecuzione assume che il piano sia corretto e completo, e lo esegue. Errori che emergono durante l'esecuzione (timeout, errori di business logic, dati non trovati) sono gestiti dal sistema di esecuzione con le proprie logiche di retry e error handling, non dalla pipeline di pianificazione.
+A silent failover is dangerous because the plan is executed on a different resource than the nominal one, which may have implications for data correctness or freshness, yet no downstream component is aware of it.
 
----
-
-## Esempio pratico
-
-Il piano concordato contiene un nodo fetch(orders) con binding logico category: database_primary. Il Physical Binding interroga il service discovery per trovare l'istanza corrente del database primario, verifica che sia raggiungibile, e risolve la connessione specifica.
-
-In questo momento, il database primario è sotto manutenzione. Il Physical Binding rileva la condizione, registra nel log: "risorsa nominale db-primary non disponibile, fallover a db-replica-2", e risolve la connessione alla replica in lettura.
-
-Il log include la nota che i dati potrebbero avere un ritardo di replica dell'ordine di pochi secondi. Se l'intent aveva specificato requires_realtime con tolleranza zero, questo fallover dovrebbe produrre un errore invece di un fallover silenzioso. Il Physical Binding deve essere in grado di verificare questa compatibilità.
+The Physical Binding log must include, for each node: the required category, the nominal resource, the resource actually used, and in case of failover the reason. This information makes it possible to correlate any output anomalies with infrastructure conditions at the time of execution.
 
 ---
 
-## Pro dell'approccio
+## The time window between validation and execution
 
-Separare il Physical Binding dalla fase di validazione mantiene la pipeline deterministica e riproducibile. Lo stesso input produce sempre lo stesso piano canonico e lo stesso binding logico, indipendentemente dalle condizioni infrastrutturali del momento.
+Physical Binding operates after a pipeline with a cumulative latency on the order of 1–2 seconds. This means there is always a time window between when the plan was validated and when it is physically resolved and then executed.
 
-Il Physical Binding come componente esplicito rende i fallover infrastrutturali visibili e loggati, invece di gestirli silenziosamente nei punti di connessione sparsi nel codice di esecuzione.
+During this window, the system's state can change: a resource can become unavailable, a piece of data can be updated, a lock can be acquired by another process. Physical Binding handles infrastructure changes (whether a resource is available or not), but it cannot handle changes in the state of the data that the plan will read or modify.
+
+This is an intrinsic architectural limitation that must be acknowledged and documented. For operations requiring absolute consistency, a strategy at the execution level — such as transactions or explicit locks — is needed, and this is not managed by the planning pipeline.
 
 ---
 
-## Contro, dubbi e punti aperti
+## The relationship with execution
 
-Il Physical Binding è il componente della pipeline con meno supervisione. Opera dopo il Comparatore, che è l'ultimo checkpoint di qualità. I suoi log sono l'unico strumento di visibilità su quello che fa.
+Physical Binding produces as output an executable plan: a structure containing for each node not just what to do and under which implementation category, but the concrete resource details (connection string, endpoint URL, connection parameters) needed to begin execution.
 
-Un fallover silenzioso che produce dati leggermente stale può essere difficile da correlare con un'anomalia nell'output, specialmente se l'anomalia si manifesta molto dopo l'esecuzione. Investire in logging strutturato e in correlazione automatica tra log del Physical Binding e anomalie dell'output è essenziale.
+This output is the boundary between the planning pipeline and the execution system. The execution system assumes the plan is correct and complete, and executes it. Errors that emerge during execution — timeouts, business logic errors, data not found — are handled by the execution system with its own retry and error handling logic, not by the planning pipeline.
 
-Un punto aperto significativo riguarda la gestione del caso in cui nessuna risorsa fisica sia disponibile per una categoria di implementazione. Il piano è valido, il binding logico è corretto, ma l'infrastruttura non è in grado di servirlo in questo momento. Il sistema deve avere un comportamento definito per questo scenario: tipicamente un errore esplicito con dettaglio sulla risorsa non disponibile, che permette al chiamante di ritentare in un momento successivo. Gestire questo come eccezione invece che come errore strutturato è un pattern da evitare.
+---
+
+## Practical example
+
+The agreed plan contains a `fetch(orders)` node with logical binding `category: database_primary`. Physical Binding queries service discovery to find the current primary database instance, verifies it is reachable, and resolves the specific connection.
+
+At this moment, the primary database is under maintenance. Physical Binding detects the condition, records in the log: "nominal resource db-primary unavailable, failing over to db-replica-2," and resolves the connection to the read replica.
+
+The log includes a note that data may have a replication delay of a few seconds. If the intent had specified `requires_realtime` with zero tolerance, this failover should produce an error rather than a silent fallback. Physical Binding must be capable of verifying this compatibility.
+
+---
+
+## Advantages of this approach
+
+Separating Physical Binding from the validation phase keeps the pipeline deterministic and reproducible. The same input always produces the same canonical plan and the same logical binding, regardless of the infrastructure conditions at the moment.
+
+Physical Binding as an explicit component makes infrastructure failovers visible and logged, rather than handling them silently at scattered connection points in the execution code.
+
+---
+
+## Drawbacks, open questions, and known issues
+
+Physical Binding is the pipeline component with the least supervision. It operates after the Comparator, which is the last quality checkpoint. Its logs are the only visibility tool for what it does.
+
+A silent failover that produces slightly stale data can be difficult to correlate with an output anomaly, especially if the anomaly manifests long after execution. Investing in structured logging and in automatic correlation between Physical Binding logs and output anomalies is essential.
+
+A significant open question concerns the handling of the case where no physical resource is available for an implementation category. The plan is valid, the logical binding is correct, but the infrastructure cannot serve it at this moment. The system must have a defined behavior for this scenario: typically an explicit error with detail about the unavailable resource, allowing the caller to retry at a later time. Handling this as an unstructured exception rather than a structured error is a pattern to avoid.

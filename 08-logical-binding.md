@@ -1,89 +1,89 @@
 # Logical Binding
 
-## Scopo
+## Purpose
 
-Il Logical Binding è il componente che arricchisce ogni nodo del piano canonico con informazioni sulla categoria di implementazione da usare per eseguire quel task. Non risolve risorse fisiche (quale server, quale connessione, quale endpoint specifico) ma decide quale tipo di implementazione è semanticamente appropriato per quel task nel contesto dell'intent.
+Logical Binding is the component that enriches each node of the canonical plan with information about the implementation category to use for executing that task. It does not resolve physical resources (which server, which connection, which specific endpoint) — it decides which type of implementation is semantically appropriate for that task given the context of the intent.
 
-La distinzione tra Logical Binding e Physical Binding è la distinzione tra una decisione semantica e una decisione infrastrutturale. Quale tipo di sorgente dati usare (database, cache, API) è una decisione semantica che dipende dall'intent e dal dominio. Quale istanza specifica di quel tipo usare in questo momento è una decisione infrastrutturale che dipende dallo stato del sistema.
+The distinction between Logical Binding and Physical Binding is the distinction between a semantic decision and an infrastructure decision. Which type of data source to use (database, cache, API) is a semantic decision that depends on the intent and the domain. Which specific instance of that type to use at this moment is an infrastructure decision that depends on the system's current state.
 
-Questa separazione è necessaria perché il Logical Binding avviene prima del Comparatore e deve essere deterministico e replicabile su entrambi i canali, mentre il Physical Binding avviene dopo e può dipendere da condizioni runtime.
-
----
-
-## La relazione con il Capability Registry
-
-Nel contesto specifico di questa architettura, dove ogni nodo contestuale si traduce in una chiamata HTTP a un'API esterna definita nel registry, il Logical Binding e il registry si sovrappongono parzialmente.
-
-Il registry dichiara per ogni azione il contratto HTTP: metodo, endpoint, e convenzione di traduzione dei parametri. Questo è esattamente la decisione che il Logical Binding deve prendere per i nodi contestuali. In questo senso, il registry è già una forma di Logical Binding dichiarativo per la categoria di implementazione HTTP.
-
-La distinzione rimane rilevante per i casi in cui esistono più implementazioni possibili per la stessa risorsa — il registry descrive l'API esterna canonica, ma potrebbero esistere alternative come cache, repliche, o sistemi legacy che il Logical Binding può selezionare basandosi sui binding constraints dell'intent. Nei casi più semplici, dove una sola implementazione è disponibile per ogni risorsa, il Logical Binding si riduce a leggere il contratto HTTP dal registry.
+This separation is necessary because Logical Binding occurs before the Comparator and must be deterministic and replicable on both channels, whereas Physical Binding occurs afterward and may depend on runtime conditions.
 
 ---
 
-## Il problema che risolve
+## The relationship with the Capability Registry
 
-Un nodo del piano con tipo "fetch" e entità "orders" può essere eseguito in modi diversi: una query diretta al database primario, una lettura dalla cache, una chiamata a un servizio di business logic, una query all'API di un sistema legacy. Queste implementazioni non sono equivalenti: hanno caratteristiche diverse di latenza, freschezza dei dati, side effect, e costo.
+In the specific context of this architecture — where every contextual node translates into an HTTP call to an external API defined in the registry — Logical Binding and the registry partially overlap.
 
-La scelta tra queste implementazioni non è arbitraria né puramente infrastrutturale. Dipende dall'intent: se l'utente ha chiesto dati in tempo reale, la cache non è appropriata. Se l'utente ha chiesto dati storici oltre una certa data, solo il sistema legacy li ha. Questa è conoscenza di dominio, non configurazione infrastrutturale.
+The registry declares for each action the HTTP contract: method, endpoint, and parameter translation convention. This is precisely the decision that Logical Binding must make for contextual nodes. In this sense, the registry is already a form of declarative Logical Binding for the HTTP implementation category.
 
-Il Logical Binding materializza questa conoscenza in modo deterministico, producendo una scelta che può essere verificata e confrontata.
-
----
-
-## Come funziona
-
-Il Logical Binding riceve per ogni nodo del piano il tipo di operazione, i parametri, e l'intent strutturato con i suoi binding constraints. Applica una serie di regole deterministiche che selezionano la categoria di implementazione appropriata.
-
-Le regole seguono una logica di eliminazione: a partire dall'insieme completo delle implementazioni disponibili per quel tipo di operazione, le regole eliminano quelle incompatibili con i vincoli dell'intent fino a identificare la categoria appropriata. Se rimane più di una categoria dopo l'eliminazione, si applica una regola di preferenza di default che può essere configurata per il dominio.
-
-I binding constraints prodotti dall'LLM durante la generazione del piano (requires_realtime, side_effects_acceptable, ecc.) sono input del Logical Binding ma non sono l'unica fonte di decisione. Vengono integrati con le regole di dominio codificate nel componente, che possono avere priorità superiore.
+The distinction remains relevant for cases where multiple implementations are possible for the same resource — the registry describes the canonical external API, but alternatives such as caches, replicas, or legacy systems may exist, and Logical Binding can select among them based on the intent's binding constraints. In simpler cases, where only one implementation is available for each resource, Logical Binding reduces to reading the HTTP contract from the registry.
 
 ---
 
-## La relazione con l'intent strutturato
+## The problem it solves
 
-Il Logical Binding ha bisogno dell'intent strutturato per due motivi distinti.
+A plan node with type `fetch` and entity `orders` can be executed in different ways: a direct query to the primary database, a cache read, a call to a business logic service, a query to a legacy system's API. These implementations are not equivalent: they differ in latency, data freshness, side effects, and cost.
 
-Il primo è l'uso diretto dei binding constraints: se l'intent specifica requires_realtime: true, il Logical Binding usa questa informazione per escludere le implementazioni basate su cache.
+The choice among these implementations is neither arbitrary nor purely infrastructural. It depends on the intent: if the user has asked for real-time data, the cache is not appropriate. If the user has asked for historical data beyond a certain date, only the legacy system has it. This is domain knowledge, not infrastructure configuration.
 
-Il secondo è la verifica di coerenza: i binding constraints prodotti dall'LLM vengono verificati contro l'intent. Se l'LLM ha prodotto requires_realtime: false ma l'intent originale richiedeva dati in tempo reale, questa inconsistenza viene rilevata qui e segnalata, prima che produca un binding sbagliato.
-
----
-
-## Il Logical Binding come arricchimento del piano canonico
-
-L'output del Logical Binding è il piano canonico arricchito con un campo binding per ogni nodo, che contiene la categoria di implementazione selezionata e le motivazioni della scelta. Questo campo diventa parte del piano che viene poi confrontato dal Comparatore.
-
-Il fatto che il binding logico faccia parte del confronto è una caratteristica importante dell'architettura: se i due canali hanno prodotto piani canonici identici ma il Logical Binding ha scelto categorie di implementazione diverse per lo stesso nodo, il Comparatore rileva questo disaccordo. Questo può succedere se i binding constraints dei due piani sono inconsistenti, e il disaccordo è un segnale informativo.
+Logical Binding materializes this knowledge in a deterministic way, producing a choice that can be verified and compared.
 
 ---
 
-## Esempio pratico
+## How it works
 
-Un piano canonico contiene un nodo fetch per l'entità orders. L'intent strutturato contiene requires_realtime: true e side_effects_acceptable: false.
+Logical Binding receives, for each plan node, the operation type, the parameters, and the structured intent with its binding constraints. It applies a series of deterministic rules that select the appropriate implementation category.
 
-Il Logical Binding ha a disposizione queste categorie per il fetch di orders: database_primary (real-time, no side effect), cache_layer (potenzialmente non aggiornato, no side effect), order_service (real-time, con side effect di audit log), legacy_api (storico oltre 90 giorni, no side effect).
+The rules follow an elimination logic: starting from the complete set of available implementations for that operation type, the rules eliminate those that are incompatible with the intent's constraints until the appropriate category is identified. If more than one category remains after elimination, a default preference rule is applied — configurable for the domain.
 
-La regola requires_realtime: true elimina cache_layer. La regola side_effects_acceptable: false elimina order_service. La legacy_api viene eliminata perché il campo created_at nell'intent non è nel range storico. Rimane database_primary.
-
-Il nodo viene arricchito con binding: { category: "database_primary", reason: "realtime_required, no_side_effects" }.
+The binding constraints produced by the LLM during plan generation (`requires_realtime`, `side_effects_acceptable`, etc.) are inputs to Logical Binding but not its only source of decisions. They are integrated with domain rules encoded in the component, which may take higher priority.
 
 ---
 
-## Pro dell'approccio
+## The relationship with the structured intent
 
-La separazione delle responsabilità tra Logical e Physical Binding evita che condizioni runtime transitorie inquinino la validazione del piano. Il Logical Binding è deterministico e stabile, il che lo rende adatto a essere replicato su due canali e confrontato.
+Logical Binding needs the structured intent for two distinct reasons.
 
-Avere la scelta del tipo di implementazione documentata come parte del piano arricchisce enormemente l'osservabilità: è possibile auditare non solo cosa è stato fatto ma perché è stato scelto quel tipo di implementazione.
+The first is the direct use of binding constraints: if the intent specifies `requires_realtime: true`, Logical Binding uses this information to exclude cache-based implementations.
+
+The second is coherence verification: the binding constraints produced by the LLM are checked against the intent. If the LLM produced `requires_realtime: false` but the original intent required real-time data, this inconsistency is detected here and flagged before it produces a wrong binding.
 
 ---
 
-## Contro, dubbi e punti aperti
+## Logical Binding as an enrichment of the canonical plan
 
-Il Logical Binding condivide con il Sanitizer il problema di essere identico su entrambi i canali. Un bug nelle regole di selezione si manifesta su entrambi i canali producendo accordo al Comparatore, anche se la scelta è sbagliata.
+The output of Logical Binding is the canonical plan enriched with a `binding` field for each node, containing the selected implementation category and the reasoning behind the choice. This field becomes part of the plan that is then compared by the Comparator.
 
-La dipendenza dai binding constraints prodotti dall'LLM introduce un rischio: se l'LLM produce constraints inconsistenti o sbagliati, il Logical Binding fa la scelta sbagliata con fiducia. La verifica di coerenza tra constraints e intent mitiga questo rischio ma non lo elimina completamente.
+The fact that logical binding is part of the comparison is an important architectural characteristic: if the two channels have produced identical canonical plans but Logical Binding chose different implementation categories for the same node, the Comparator detects this disagreement. This can happen if the binding constraints of the two plans are inconsistent, and the disagreement is an informative signal.
 
-La gestione dell'aggiunta di nuove categorie di implementazione richiede di aggiornare le regole del Logical Binding. Se una nuova categoria viene aggiunta senza aggiornare le regole, non viene mai selezionata. Se viene aggiunta ma le regole di eliminazione non la considerano correttamente, può essere selezionata in casi inappropriati. Questo richiede un processo di deploy coordinato.
+---
 
-Un punto aperto più profondo riguarda i casi dove nessuna categoria disponibile soddisfa tutti i vincoli dell'intent. Il Logical Binding deve avere un comportamento definito per questo scenario: segnalare il problema e bloccare il piano, scegliere la categoria meno incompatibile con una segnalazione, o escalare verso una decisione umana. La scelta dipende dal dominio e dalla criticità dell'operazione.
+## Practical example
+
+A canonical plan contains a `fetch` node for the `orders` entity. The structured intent contains `requires_realtime: true` and `side_effects_acceptable: false`.
+
+Logical Binding has the following categories available for fetching orders: `database_primary` (real-time, no side effect), `cache_layer` (potentially stale, no side effect), `order_service` (real-time, with audit log side effect), `legacy_api` (historical beyond 90 days, no side effect).
+
+The rule `requires_realtime: true` eliminates `cache_layer`. The rule `side_effects_acceptable: false` eliminates `order_service`. The `legacy_api` is eliminated because the `created_at` field in the intent is not in the historical range. `database_primary` remains.
+
+The node is enriched with `binding: { category: "database_primary", reason: "realtime_required, no_side_effects" }`.
+
+---
+
+## Advantages of this approach
+
+Separating responsibilities between Logical and Physical Binding prevents transient runtime conditions from contaminating plan validation. Logical Binding is deterministic and stable, which makes it suitable for replication across two channels and for comparison.
+
+Having the implementation type choice documented as part of the plan greatly enriches observability: it is possible to audit not just what was done but why a particular type of implementation was chosen.
+
+---
+
+## Drawbacks, open questions, and known issues
+
+Logical Binding shares with the Sanitizer the problem of being identical on both channels. A bug in the selection rules manifests on both channels, producing agreement at the Comparator even when the choice is wrong.
+
+The dependency on binding constraints produced by the LLM introduces a risk: if the LLM produces inconsistent or wrong constraints, Logical Binding makes the wrong choice with confidence. The coherence check between constraints and intent mitigates this risk but does not eliminate it entirely.
+
+Managing the addition of new implementation categories requires updating the Logical Binding rules. If a new category is added without updating the rules, it is never selected. If it is added but the elimination rules do not consider it correctly, it may be selected in inappropriate cases. This requires a coordinated deployment process.
+
+A deeper open question concerns the cases where no available category satisfies all the intent's constraints. Logical Binding must have a defined behavior for this scenario: signal the problem and block the plan, choose the least incompatible category with a warning, or escalate to a human decision. The choice depends on the domain and the criticality of the operation.

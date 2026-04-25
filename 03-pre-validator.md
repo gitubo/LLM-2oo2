@@ -1,87 +1,87 @@
-# Pre-Validator (Validazione Sintattica di Primo Livello)
+# Pre-Validator (First-Level Syntactic Validation)
 
-## Scopo
+## Purpose
 
-Il Pre-Validator è il primo componente che incontra l'output grezzo del Plan Generator. Il suo compito è esclusivamente quello di determinare se il materiale in arrivo è sufficientemente strutturato da poter essere processato dai componenti successivi, in particolare dal Sanitizer.
+The Pre-Validator is the first component to encounter the raw output of the Plan Generator. Its sole job is to determine whether the incoming material is sufficiently structured to be processed by subsequent components — in particular, the Sanitizer.
 
-Non valuta la correttezza del piano. Non controlla i valori, non verifica i tipi, non applica regole di dominio. Risponde a una sola domanda: c'è abbastanza struttura qui da poter lavorarci sopra?
+It does not evaluate the correctness of the plan. It does not check values, verify types, or apply domain rules. It answers a single question: is there enough structure here to work with?
 
-Il principio è il fail fast: è meglio scartare subito un output irrecuperabile che passarlo al Sanitizer, dove fallirebbe comunque dopo aver consumato risorse e prodotto messaggi di errore meno informativi.
-
----
-
-## Cosa controlla
-
-Il Pre-Validator applica un insieme minimo di verifiche che rispecchiano i requisiti strutturali fondamentali del formato atteso.
-
-Prima verifica che l'output sia JSON valido e parseable. Se il modello ha prodotto testo libero, markdown con blocchi di codice, JSON parziale o troncato, il pre-validator lo rileva immediatamente e scarta il materiale.
-
-Poi verifica la presenza dei macro-campi obbligatori definiti a priori: tipicamente un campo metadata che contiene informazioni sul piano stesso, e un campo plan che contiene la lista dei task. Non controlla il contenuto di questi campi, solo la loro esistenza.
-
-Verifica che il campo plan sia un array e che contenga almeno un elemento. Un piano vuoto non è un piano.
-
-Questa è la lista completa dei controlli. Qualsiasi verifica aggiuntiva appartiene al Full Schema Validator.
+The principle is fail fast: it is better to immediately discard unrecoverable output than to pass it to the Sanitizer, where it would fail anyway after consuming resources and producing less informative error messages.
 
 ---
 
-## Comportamento in caso di fallimento
+## What it checks
 
-Se il Pre-Validator fallisce, il piano è considerato irrecuperabile e si avvia immediatamente un retry della generazione sullo stesso canale. Non viene passato nulla al Sanitizer.
+The Pre-Validator applies a minimal set of checks that reflect the fundamental structural requirements of the expected format.
 
-Il retry avviene con lo stesso prompt, salvo che l'implementazione preveda un meccanismo di variazione del prompt per il retry (temperatura diversa, istruzioni aggiuntive sulla struttura attesa). La scelta dipende dalla causa più probabile del fallimento: se i fallimenti sono rari e casuali, il retry semplice è sufficiente; se sono sistematici, serve una strategia di prompt diversa.
+First, it verifies that the output is valid, parseable JSON. If the model has produced free text, markdown with code blocks, partial JSON, or truncated JSON, the pre-validator detects this immediately and discards the material.
 
-Esiste un numero massimo di retry oltre il quale il canale viene considerato in failure e il sistema si comporta di conseguenza, che può significare procedere con un solo canale o escalare all'operatore.
+Next, it verifies the presence of the mandatory macro-fields defined in advance: typically a `metadata` field containing information about the plan itself, and a `plan` field containing the list of tasks. It does not check the contents of these fields — only their existence.
+
+It verifies that the `plan` field is an array and that it contains at least one element. An empty plan is not a plan.
+
+This is the complete list of checks. Any additional verification belongs to the Full Schema Validator.
 
 ---
 
-## Esempio pratico
+## Behavior on failure
 
-Un Plan Generator potrebbe produrre output come il seguente in caso di problema:
+If the Pre-Validator fails, the plan is considered unrecoverable and a retry of generation is immediately triggered on the same channel. Nothing is passed to the Sanitizer.
 
-    Ecco il piano che hai richiesto:
+The retry uses the same prompt, unless the implementation includes a mechanism for prompt variation on retry (different temperature, additional instructions about the expected structure). The choice depends on the most likely cause of failure: if failures are rare and random, a simple retry is sufficient; if they are systematic, a different prompt strategy is needed.
+
+There is a maximum number of retries beyond which the channel is considered failed and the system behaves accordingly — which may mean proceeding with a single channel or escalating to the operator.
+
+---
+
+## Practical examples
+
+A Plan Generator might produce output like the following when something goes wrong:
+
+    Here is the plan you requested:
     
-    1. Recupera gli ordini
-    2. Filtra per status confermato
-    3. Ordina per data
+    1. Retrieve orders
+    2. Filter by confirmed status
+    3. Sort by date
 
-Questo è testo libero, non JSON. Il Pre-Validator lo scarta immediatamente senza tentare di interpretarlo.
+This is free text, not JSON. The Pre-Validator discards it immediately without attempting to interpret it.
 
-Un altro caso tipico è JSON parziale dovuto a un output troncato per limite di token:
+Another typical case is partial JSON due to output truncated by a token limit:
 
     {"metadata": {"version": "1.0"}, "plan": [{"id": "t1", "task_type": "fetch"
 
-Questo fallisce il parsing JSON. Il Pre-Validator lo scarta.
+This fails JSON parsing. The Pre-Validator discards it.
 
-Un caso meno ovvio è JSON valido ma senza i campi attesi:
+A less obvious case is valid JSON but without the expected fields:
 
     {"result": "ok", "tasks": [...]}
 
-Questo è JSON parseable ma i campi "metadata" e "plan" non ci sono. Il Pre-Validator lo scarta perché il Sanitizer non ha un punto d'appoggio su cui lavorare.
+This is parseable JSON, but the `metadata` and `plan` fields are absent. The Pre-Validator discards it because the Sanitizer has no anchor to work from.
 
 ---
 
 ## Logging
 
-Il Pre-Validator emette un evento strutturato per ogni esecuzione, indipendentemente dall'esito. L'evento include il trace_id, il canale, l'esito, e in caso di fallimento la categoria dell'errore (non JSON, campo mancante, plan vuoto, ecc.).
+The Pre-Validator emits a structured event for every execution, regardless of outcome. The event includes the `trace_id`, the channel, the outcome, and in the event of failure the error category (not JSON, missing field, empty plan, etc.).
 
-Questi log hanno un valore diagnostico importante. Un tasso di fallimento alto al Pre-Validator è un segnale che il modello sta sistematicamente producendo output malformati, il che può indicare un problema nel prompt, un aggiornamento del modello che ha cambiato il comportamento, o un tipo di input per cui il modello non è stato adeguatamente istruito.
-
----
-
-## Pro dell'approccio
-
-La semplicità è il vantaggio principale. Un componente con poche responsabilità è facile da testare, da capire, e da mantenere. Non ci sono casi grigi: o l'output supera i controlli o viene scartato.
-
-La separazione dal Sanitizer è corretta dal punto di vista del design. Il Sanitizer lavora su materiale che ha già una struttura di base, e può quindi fare assunzioni ragionevoli su cosa correggere. Se il Sanitizer dovesse gestire anche output completamente malformati, diventerebbe più complesso e meno prevedibile.
-
-La rapidità del fail fast riduce la latenza nei casi di errore: invece di passare materiale irrecuperabile attraverso tutti gli stadi della pipeline per vederlo fallire all'ultimo, il problema viene identificato al primo stadio.
+These logs have significant diagnostic value. A high failure rate at the Pre-Validator is a signal that the model is systematically producing malformed output, which may indicate a problem in the prompt, a model update that changed behavior, or an input type the model was not adequately trained to handle.
 
 ---
 
-## Contro, dubbi e punti aperti
+## Advantages of this approach
 
-Il Pre-Validator introduce una dipendenza sul formato dei macro-campi che deve essere mantenuta allineata con il resto del sistema. Se lo schema evolve e i nomi dei campi fondamentali cambiano, il Pre-Validator va aggiornato contestualmente. Questo non è un problema tecnico serio ma è un rischio di disallineamento in ambienti con deploy frequenti.
+Simplicity is the main advantage. A component with few responsibilities is easy to test, understand, and maintain. There are no gray areas: either the output passes the checks or it is discarded.
 
-La soglia tra "irrecuperabile" e "recuperabile dal Sanitizer" non è sempre netta. Ci sono casi grigi dove il materiale ha qualche struttura ma non è abbastanza da rendere sicura la correzione automatica. La decisione di dove tracciare questa linea è soggettiva e dipende dalla tolleranza al rischio del caso d'uso specifico.
+The separation from the Sanitizer is architecturally correct. The Sanitizer works on material that already has a basic structure, and can therefore make reasonable assumptions about what to correct. If the Sanitizer also had to handle completely malformed output, it would become more complex and less predictable.
 
-Un punto aperto riguarda la gestione del caso in cui entrambi i canali falliscano il Pre-Validator contemporaneamente. La probabilità è bassa se i modelli sono diversi, ma non è zero. Il sistema deve avere un comportamento definito per questo caso, che tipicamente è l'escalation immediata con un messaggio chiaro all'operatore.
+The speed of failing fast reduces latency in error cases: instead of passing unrecoverable material through all pipeline stages only to see it fail at the last one, the problem is identified at the first stage.
+
+---
+
+## Drawbacks, open questions, and known issues
+
+The Pre-Validator introduces a dependency on the macro-field format that must be kept aligned with the rest of the system. If the schema evolves and the names of the fundamental fields change, the Pre-Validator must be updated at the same time. This is not a serious technical problem, but it is a misalignment risk in environments with frequent deployments.
+
+The boundary between "unrecoverable" and "recoverable by the Sanitizer" is not always sharp. There are gray areas where material has some structure but not enough to make automatic correction safe. The decision of where to draw this line is subjective and depends on the risk tolerance of the specific use case.
+
+An open question concerns the handling of the case where both channels fail the Pre-Validator simultaneously. The probability is low if the models are different, but it is not zero. The system must have a defined behavior for this case, which is typically immediate escalation with a clear message to the operator.

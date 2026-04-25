@@ -1,77 +1,77 @@
 # Sanitizer
 
-## Scopo
+## Purpose
 
-Il Sanitizer è il componente che opera tra la pre-validazione e la validazione completa. Riceve materiale che ha superato il Pre-Validator (è JSON con i macro-campi presenti) ma non ha ancora affrontato il Full Schema Validator. Il suo compito è correggere automaticamente le deviazioni piccole e recuperabili dall'output grezzo del modello, portando il documento a uno stato dove la validazione completa ha alte probabilità di successo.
+The Sanitizer is the component that operates between pre-validation and full validation. It receives material that has passed the Pre-Validator (it is JSON with the macro-fields present) but has not yet faced the Full Schema Validator. Its job is to automatically correct small, recoverable deviations in the raw model output, bringing the document to a state where full validation has a high probability of succeeding.
 
-La metafora più accurata è quella di un normalizzatore: non cambia la sostanza del piano, sistema la forma. Aggiunge campi opzionali con valori di default documentati, normalizza tipi di dato (un numero espresso come stringa diventa un numero), rimuove campi extra non previsti dallo schema, standardizza formati come date e identificatori.
-
----
-
-## La regola fondamentale del Sanitizer
-
-Il Sanitizer deve correggere solo ciò che sa correggere con certezza e senza rischi di alterare la semantica. Ogni volta che esiste anche il minimo dubbio sul fatto che una correzione possa cambiare il significato del piano, il Sanitizer non corregge. Lascia passare il materiale così com'è e lascia che il Full Schema Validator fallisca con un messaggio preciso.
-
-Questa regola esiste perché le correzioni silenziosamente sbagliate sono più pericolose degli errori espliciti. Un errore che fa fallire il Full Schema Validator è visibile e gestibile. Una correzione che introduce un valore di default semanticamente sbagliato è invisibile e si propaga.
+The most accurate metaphor is that of a normalizer: it does not change the substance of the plan — it fixes the form. It adds optional fields with documented default values, normalizes data types (a number expressed as a string becomes a number), removes extra fields not in the schema, and standardizes formats such as dates and identifiers.
 
 ---
 
-## Cosa può correggere
+## The Sanitizer's fundamental rule
 
-Le categorie di correzione ammesse sono limitate e ben definite.
+The Sanitizer must correct only what it knows how to correct with certainty and without risk of altering semantics. Whenever there is even the slightest doubt that a correction might change the meaning of the plan, the Sanitizer does not correct. It passes the material through as-is and lets the Full Schema Validator fail with a precise message.
 
-Campi obbligatori con default non ambiguo: se un campo che deve essere presente ha un valore di default che è corretto per quasi tutti i contesti del dominio, il Sanitizer può aggiungerlo. Il punto critico è "quasi tutti i contesti": se esiste anche solo una situazione ragionevole dove il default potrebbe essere sbagliato, quella correzione non appartiene al Sanitizer ma richiede una decisione esplicita.
-
-Conversioni di tipo non perdenti: un valore numerico rappresentato come stringa può essere convertito nel tipo corretto senza ambiguità. Un booleano rappresentato come stringa "true" o "false" può essere convertito. Una data in formato non standard può essere normalizzata a ISO 8601 se il formato originale è non ambiguo.
-
-Rimozione di campi non previsti dallo schema: se il modello ha aggiunto campi extra che non fanno parte dello schema definito, il Sanitizer li rimuove. Questo è sicuro perché campi non previsti sono per definizione ignorati dal sistema a valle.
-
-Normalizzazione di identificatori: se gli ID dei task devono seguire un formato specifico e il modello ha prodotto ID validi ma in formato diverso, il Sanitizer può normalizzarli garantendo di aggiornare coerentemente tutti i riferimenti (le dipendenze che puntano a quegli ID).
+This rule exists because silently wrong corrections are more dangerous than explicit errors. An error that causes the Full Schema Validator to fail is visible and manageable. A correction that introduces a semantically wrong default value is invisible and propagates downstream.
 
 ---
 
-## Cosa non può correggere
+## What it can correct
 
-Il Sanitizer non può e non deve correggere errori semantici o strutturali. Se un nodo del piano manca di un campo che non ha un valore di default ragionevole, il Sanitizer deve lasciare il campo mancante e permettere al Full Schema Validator di segnalarlo. Se un campo ha un valore che non appartiene all'insieme dei valori ammessi, il Sanitizer non può scegliere arbitrariamente un valore alternativo.
+The categories of permitted corrections are limited and well-defined.
 
-In particolare, il Sanitizer non deve mai inferire l'intent dell'utente per prendere decisioni di correzione. Se la direzione di un ordinamento (ascendente o discendente) non è specificata, aggiungere un default è già problematico; aggiungere un default basato sull'interpretazione del tipo di query è fuori dal perimetro del Sanitizer.
+**Mandatory fields with unambiguous defaults.** If a required field has a default value that is correct for almost all contexts in the domain, the Sanitizer can add it. The critical qualifier is "almost all contexts": if even one reasonable situation exists where the default might be wrong, that correction does not belong to the Sanitizer — it requires an explicit decision.
 
----
+**Non-lossy type conversions.** A numeric value represented as a string can be converted to the correct type without ambiguity. A boolean represented as the string `"true"` or `"false"` can be converted. A date in a non-standard format can be normalized to ISO 8601 if the original format is unambiguous.
 
-## Logging delle correzioni
+**Removal of fields not in the schema.** If the model has added extra fields that are not part of the defined schema, the Sanitizer removes them. This is safe because fields not anticipated by the schema are by definition ignored by downstream components.
 
-Ogni correzione applicata deve essere loggata con dettaglio sufficiente da essere auditabile. Il log di una correzione include il campo modificato, il valore originale (anche se era assente), il valore applicato, e la regola di sanitizzazione che ha determinato la scelta.
-
-I log del Sanitizer sono uno strumento diagnostico fondamentale. Aggregati nel tempo, mostrano quali tipi di correzione vengono applicate più frequentemente. Un'alta frequenza di correzioni su un campo specifico non è normale: indica che il prompt del Plan Generator ha un problema sistematico su quel campo, e la soluzione non è rendere il Sanitizer più aggressivo ma migliorare il prompt a monte.
-
-Il campo confidence associato a ciascuna correzione (alta se il default è quasi universalmente corretto, bassa se è una scelta più arbitraria) permette di prioritizzare quali pattern meritano attenzione.
+**Normalization of identifiers.** If task IDs must follow a specific format and the model has produced valid but differently formatted IDs, the Sanitizer can normalize them — guaranteeing it also updates all references (the dependencies pointing to those IDs) consistently.
 
 ---
 
-## Esempio pratico
+## What it cannot correct
 
-Il Plan Generator produce un piano con un nodo filter che ha tutti i campi richiesti eccetto il campo case_sensitive, che è opzionale ma se presente deve essere un booleano. Il modello ha prodotto il valore "false" come stringa invece di come booleano.
+The Sanitizer cannot and must not correct semantic or structural errors. If a plan node is missing a field that has no reasonable default value, the Sanitizer must leave the field absent and allow the Full Schema Validator to flag it. If a field has a value that does not belong to the set of permitted values, the Sanitizer cannot arbitrarily choose an alternative value.
 
-Il Sanitizer corregge la conversione di tipo: "false" stringa diventa false booleano. Log della correzione: campo task[2].case_sensitive, originale "false" (string), applicato false (boolean), regola type_coercion_boolean, confidence alta.
-
-Stesso scenario ma il campo case_sensitive non è presente. Se il dominio definisce un default di false per questo campo, il Sanitizer lo aggiunge. Log della correzione: campo task[2].case_sensitive, originale assente, applicato false (boolean), regola default_case_sensitive, confidence alta se il default è praticamente sempre corretto nel dominio.
-
-Ora un caso che il Sanitizer non deve correggere: il nodo filter manca del campo operator, che può essere "and" o "or". Non esiste un default non ambiguo: "and" è più comune ma "or" è semanticamente diverso. Il Sanitizer lascia il campo mancante. Il Full Schema Validator segnala l'errore. Questo è il comportamento corretto.
+In particular, the Sanitizer must never infer the user's intent in order to make correction decisions. If the direction of a sort (ascending or descending) is not specified, adding a default is already problematic; adding a default based on an interpretation of the query type is entirely outside the Sanitizer's scope.
 
 ---
 
-## Pro dell'approccio
+## Logging corrections
 
-Separare la correzione automatica dalla validazione completa è architetturalmente corretto perché attribuisce responsabilità diverse a componenti diversi. Il Full Schema Validator può essere binario (passa o non passa) senza preoccuparsi di cosa si potrebbe correggere. Il Sanitizer può essere focalizzato sul recupero senza preoccuparsi di cosa è formalmente valido.
+Every correction applied must be logged with sufficient detail to be auditable. The log entry for a correction includes: the modified field, the original value (even if it was absent), the applied value, and the sanitization rule that determined the choice.
 
-Il Sanitizer riduce il numero di fallimenti al Full Schema Validator che non sono errori reali ma sono deviazioni banali di formato. Questo migliora la disponibilità del sistema e riduce il rumore nelle metriche di qualità.
+The Sanitizer's logs are a fundamental diagnostic tool. Aggregated over time, they show which types of corrections are applied most frequently. A high frequency of corrections on a specific field is not normal: it indicates that the Plan Generator's prompt has a systematic problem with that field, and the solution is not to make the Sanitizer more aggressive — it is to improve the prompt upstream.
+
+The confidence level associated with each correction (high if the default is almost universally correct, low if the choice is more arbitrary) helps prioritize which patterns deserve attention.
 
 ---
 
-## Contro, dubbi e punti aperti
+## Practical example
 
-Il rischio principale del Sanitizer è la creazione di una zona grigia di responsabilità. Quando un piano superato il Sanitizer e il Full Schema Validator poi fallisce in produzione, è difficile capire se l'errore fosse nel piano originale o nell'applicazione di un default sbagliato. Questo richiede che i log del Sanitizer vengano correlati con i fallimenti downstream.
+The Plan Generator produces a plan with a `filter` node that has all required fields except `case_sensitive`, which is optional but must be a boolean if present. The model has produced the value `"false"` as a string instead of as a boolean.
 
-Il fatto che il Sanitizer sia lo stesso su entrambi i canali lo rende un single point of failure condiviso. Un bug nel Sanitizer che converte silenziosamente un valore sbagliato in qualcosa di formalmente valido lo fa su entrambi i canali simultaneamente. Il comparatore vedrà accordo e il piano passerà. La difesa è mantenere il Sanitizer semplice e testarlo esaustivamente come si farebbe con codice critico.
+The Sanitizer corrects the type conversion: the string `"false"` becomes the boolean `false`. Correction log entry: field `task[2].case_sensitive`, original `"false"` (string), applied `false` (boolean), rule `type_coercion_boolean`, confidence high.
 
-Un punto aperto riguarda l'evoluzione dello schema nel tempo. Quando vengono aggiunti nuovi campi obbligatori, bisogna decidere se hanno default sanitizzabili e aggiornare il Sanitizer contestualmente. Questo richiede un processo di coordinamento tra i team che gestiscono lo schema e quelli che gestiscono il Sanitizer.
+Same scenario, but the `case_sensitive` field is absent. If the domain defines a default of `false` for this field, the Sanitizer adds it. Correction log entry: field `task[2].case_sensitive`, original absent, applied `false` (boolean), rule `default_case_sensitive`, confidence high (if the default is practically always correct in the domain).
+
+Now a case the Sanitizer must not correct: the `filter` node is missing the `operator` field, which can be `"and"` or `"or"`. There is no unambiguous default: `"and"` is more common but `"or"` is semantically different. The Sanitizer leaves the field absent. The Full Schema Validator flags the error. This is the correct behavior.
+
+---
+
+## Advantages of this approach
+
+Separating automatic correction from full validation is architecturally correct because it assigns different responsibilities to different components. The Full Schema Validator can be binary — pass or fail — without worrying about what could be corrected. The Sanitizer can focus on recovery without worrying about what is formally valid.
+
+The Sanitizer reduces the number of Full Schema Validator failures that are not real errors but merely trivial format deviations. This improves system availability and reduces noise in quality metrics.
+
+---
+
+## Drawbacks, open questions, and known issues
+
+The main risk of the Sanitizer is creating a gray area of accountability. When a plan passes the Sanitizer and then the Full Schema Validator fails downstream in production, it can be difficult to determine whether the error was in the original plan or in the application of a wrong default. This requires correlating Sanitizer logs with downstream failures.
+
+The fact that the Sanitizer is the same on both channels makes it a shared single point of failure. A Sanitizer bug that silently converts a wrong value into something formally valid does so on both channels simultaneously. The comparator will see agreement and the plan will pass. The defense is to keep the Sanitizer simple and test it exhaustively, as you would with any critical code.
+
+An open question concerns schema evolution over time. When new mandatory fields are added, it must be decided whether they have sanitizable defaults, and the Sanitizer must be updated accordingly. This requires a coordination process between the teams managing the schema and those managing the Sanitizer.

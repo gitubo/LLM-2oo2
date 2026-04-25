@@ -1,47 +1,47 @@
 # Capability Registry
 
-## Scopo
+## Purpose
 
-Il Capability Registry è la sorgente di verità dell'intero sistema. È un documento dichiarativo — nessuna logica, nessuna funzione — che descrive le risorse del dominio, i loro campi, le azioni disponibili su di esse, e il contratto con le API esterne che le espongono.
+The Capability Registry is the single source of truth for the entire system. It is a declarative document — no logic, no functions — that describes the domain resources, their fields, the actions available on them, and the contract with the external APIs that expose them.
 
-La sua posizione nell'architettura è trasversale: non è un componente della pipeline sequenziale ma un artefatto di configurazione che viene letto da più componenti in momenti diversi. Il LLM Prompt Builder lo legge per costruire il contesto del Planner. Il Semantic Validator lo legge per verificare la correttezza dei campi e degli operatori. L'Optimizer lo legge per decidere quali nodi trasversali collassare. Il Logical Binding lo legge per costruire il contratto HTTP.
+Its position in the architecture is transversal: it is not a component of the sequential pipeline but a configuration artifact read by multiple components at different moments. The LLM Prompt Builder reads it to construct the Planner's context. The Semantic Validator reads it to verify the correctness of fields and operators. The Optimizer reads it to decide which transversal nodes to collapse. Logical Binding reads it to construct the HTTP contract.
 
-Questa centralità è il suo valore principale: esiste un solo posto dove modificare la definizione di una risorsa, e quella modifica si propaga automaticamente a tutti i componenti che ne dipendono.
-
----
-
-## La distinzione tra nodi contestuali e trasversali
-
-Prima di descrivere la struttura del registry, è necessario comprendere la distinzione fondamentale tra i due tipi di nodi che compongono un piano.
-
-I nodi contestuali appartengono a una risorsa specifica e si traducono in una chiamata HTTP a un'API esterna. Fetch, delete, update sono nodi contestuali. Conoscono l'entità su cui operano, il metodo HTTP, l'endpoint.
-
-I nodi trasversali operano su qualsiasi collection indipendentemente dalla risorsa. Filter, sort, limit, map sono nodi trasversali. Non fanno chiamate HTTP: vengono eseguiti lato client oppure, quando l'API esterna li supporta nativamente, vengono collassati nel nodo contestuale precedente durante la fase di ottimizzazione.
-
-Il registry è la fonte che definisce questa distinzione per ogni risorsa: non in astratto, ma concretamente per ogni campo e ogni operazione.
+This centrality is its primary value: there is only one place to modify the definition of a resource, and that change propagates automatically to all components that depend on it.
 
 ---
 
-## Struttura
+## The distinction between contextual and transversal nodes
 
-Il registry è organizzato per risorsa. Ogni risorsa ha tre sezioni principali.
+Before describing the registry's structure, it is necessary to understand the fundamental distinction between the two types of nodes that compose a plan.
 
-**Schema dei campi** — descrive i campi dell'oggetto di dominio: tipo, valori ammessi se enumerabili, formato se strutturato. Questa sezione serve al Semantic Validator per verificare che i nodi trasversali operino su campi che esistono davvero sulla risorsa, e all'LLM per sapere su quali campi può costruire filtri e ordinamenti.
+**Contextual nodes** belong to a specific resource and translate into an HTTP call to an external API. Fetch, delete, and update are contextual nodes. They know the entity they operate on, the HTTP method, and the endpoint.
 
-**Azioni disponibili** — descrive le operazioni che si possono compiere sulla risorsa. Per ogni azione: una descrizione leggibile che va nel prompt, il flag side_effect che attiva meccanismi di validazione aggiuntivi, i parametri diretti accettati dall'azione, e il contratto HTTP.
+**Transversal nodes** operate on any collection regardless of the resource. Filter, sort, limit, and map are transversal nodes. They do not make HTTP calls: they are either executed client-side, or — when the external API supports them natively — they are collapsed into the preceding contextual node during the optimization phase.
 
-**Supporto nativo per le operazioni trasversali** — per ogni azione, quali operazioni trasversali l'API esterna è in grado di gestire nativamente, su quali campi, e con quali operatori. Questa è la sezione che l'Optimizer usa per decidere cosa collassare.
+The registry is the source that defines this distinction for each resource: not in the abstract, but concretely for each field and each operation.
 
 ---
 
-## Il formato
+## Structure
+
+The registry is organized by resource. Each resource has three main sections.
+
+**Field schema** — describes the fields of the domain object: type, permitted values if enumerable, format if structured. This section is used by the Semantic Validator to verify that transversal nodes operate on fields that actually exist on the resource, and by the LLM to know on which fields it can build filters and sorts.
+
+**Available actions** — describes the operations that can be performed on the resource. For each action: a human-readable description that goes into the prompt, the `side_effect` flag that activates additional validation mechanisms, the direct parameters accepted by the action, and the HTTP contract.
+
+**Native support for transversal operations** — for each action, which transversal operations the external API is capable of handling natively, on which fields, and with which operators. This is the section the Optimizer uses to decide what to collapse.
+
+---
+
+## The format
 
 ```json
 {
   "registry_version": "1.0",
   "resources": {
     "users": {
-      "description": "Utenti registrati della piattaforma",
+      "description": "Registered platform users",
       "schema": {
         "id":           { "type": "string" },
         "role":         { "type": "string", "enum": ["admin", "viewer", "editor"] },
@@ -51,7 +51,7 @@ Il registry è organizzato per risorsa. Ogni risorsa ha tre sezioni principali.
       },
       "actions": {
         "fetch": {
-          "description": "Recupera la lista degli utenti",
+          "description": "Retrieve the list of users",
           "side_effect": false,
           "params": {
             "role":   { "type": "string", "enum": ["admin","viewer","editor"], "optional": true },
@@ -74,7 +74,7 @@ Il registry è organizzato per risorsa. Ogni risorsa ha tre sezioni principali.
           }
         },
         "delete": {
-          "description": "Elimina gli utenti della collection corrente",
+          "description": "Delete the users in the current collection",
           "side_effect": true,
           "params": {},
           "http": {
@@ -102,46 +102,46 @@ Il registry è organizzato per risorsa. Ogni risorsa ha tre sezioni principali.
 
 ---
 
-## Le scelte di design
+## Design choices
 
-**registry_version a livello radice.** Il registry evolve insieme al dominio. I componenti che lo leggono vengono aggiornati su cicli temporali diversi. Il campo di versione permette a ogni componente di rilevare un disallineamento invece di comportarsi in modo imprevedibile su un formato che non conosce.
+**`registry_version` at the root level.** The registry evolves alongside the domain. The components that read it are updated on different time cycles. The version field allows each component to detect a misalignment instead of behaving unpredictably on a format it does not recognize.
 
-**Le conventions come sezione separata.** Il registry dichiara per ogni azione il nome della convenzione usata dall'API esterna, non la logica di traduzione. La logica vive in un layer separato con un adapter per convenzione. Questo significa che aggiungere una nuova risorsa non richiede mai di scrivere logica di traduzione, e che aggiungere il supporto a una nuova API esterna richiede di scrivere un solo adapter riutilizzabile da tutte le risorse che usano quella convenzione.
+**Conventions as a separate section.** The registry declares for each action the name of the convention used by the external API, not the translation logic. The logic lives in a separate layer with one adapter per convention. This means that adding a new resource never requires writing translation logic, and that adding support for a new external API requires writing only one adapter — reusable by all resources that use that convention.
 
-**side_effect come dichiarazione esplicita.** Non viene inferito dal metodo HTTP. Un DELETE potrebbe non avere side effect critici in certi contesti, un POST potrebbe averli. La semantica di side effect nel senso che interessa al sistema — ovvero operazioni che modificano stato in modo non reversibile — non è deducibile meccanicamente dal metodo HTTP e deve essere dichiarata consapevolmente.
+**`side_effect` as an explicit declaration.** It is not inferred from the HTTP method. A DELETE might have no critical side effects in certain contexts; a POST might have them. The semantics of side effect in the sense that matters to the system — operations that modify state irreversibly — cannot be mechanically deduced from the HTTP method and must be declared deliberately.
 
-**supports: false come valore esplicito.** Quando un'operazione trasversale non è supportata nativamente, il valore è false, non un campo assente. La distinzione è importante per l'Optimizer: un campo assente potrebbe indicare un registry incompleto o una versione più vecchia dello schema; false è una dichiarazione consapevole che l'operazione rimane un nodo client.
-
----
-
-## Come viene usato dai componenti a valle
-
-Il LLM Prompt Builder legge il registry per costruire il contesto del Planner: estrae la descrizione della risorsa, i campi dello schema, le azioni disponibili con i loro parametri, e i campi filtrabili con i rispettivi operatori ammessi. Passa all'LLM solo le risorse rilevanti per la richiesta corrente, non il registry completo.
-
-Il Semantic Validator legge lo schema per verificare che ogni nodo filter e sort nel piano operi su campi che esistono sulla risorsa, e che gli operatori usati siano tra quelli dichiarati come supportati.
-
-L'Optimizer legge la sezione supports di ogni azione contestuale per decidere quali nodi trasversali successivi possono essere collassati in essa. Se filter su un certo campo è supportato nativo mente, il nodo filter viene rimosso dalla linked list e i suoi parametri vengono aggiunti ai parametri del nodo contestuale.
-
-Il Logical Binding legge la sezione http per costruire il contratto della chiamata: metodo, endpoint, e nome della convenzione da applicare per tradurre i parametri.
+**`supports: false` as an explicit value.** When a transversal operation is not natively supported, the value is `false`, not an absent field. The distinction matters for the Optimizer: an absent field might indicate an incomplete registry or an older schema version; `false` is a deliberate declaration that the operation remains a client-side node.
 
 ---
 
-## Pro dell'approccio
+## How it is used by downstream components
 
-La sorgente di verità unica elimina la possibilità di disallineamenti tra componenti. Quando un'API esterna aggiunge il supporto nativo al filter su un nuovo campo, si aggiorna il registry in un posto solo e l'Optimizer inizia automaticamente a collassare quel nodo senza modifiche al codice.
+**The LLM Prompt Builder** reads the registry to build the Planner's context: it extracts the resource description, schema fields, available actions with their parameters, and filterable fields with their permitted operators. It passes to the LLM only the resources relevant to the current request, not the full registry.
 
-Il formato dichiarativo rende il registry leggibile e modificabile da chi conosce il dominio senza necessità di competenze tecniche sulla pipeline. È un documento di configurazione, non di programmazione.
+**The Semantic Validator** reads the schema to verify that every filter and sort node in the plan operates on fields that exist on the resource, and that the operators used are among those declared as supported.
 
-La separazione tra schema dei campi e azioni disponibili riflette una distinzione semantica reale: lo schema descrive l'oggetto di dominio, le azioni descrivono cosa si può fare su di esso. Questa separazione permette al Semantic Validator di fare type checking sui nodi trasversali risalendo la linked list fino al primo nodo contestuale e usando lo schema della risorsa corrispondente.
+**The Optimizer** reads the `supports` section of each contextual action to decide which subsequent transversal nodes can be collapsed into it. If filtering on a certain field is natively supported, the filter node is removed from the linked list and its parameters are added to the contextual node's parameters.
+
+**Logical Binding** reads the `http` section to construct the call contract: method, endpoint, and the name of the convention to apply for translating parameters.
 
 ---
 
-## Contro, dubbi e punti aperti
+## Advantages of this approach
 
-La distinzione tra campi filtrabili come parametri diretti dell'azione e campi filtrabili come operazioni trasversali collassabili non è completamente risolta nel formato attuale. Nel formato proposto, un campo può apparire in params (parametro diretto dell'azione fetch) e in supports.filter.fields (filtraggio nativo collassabile). Sono due meccanismi di filtraggio con implementazione diversa sull'API esterna, e la documentazione del registry deve rendere questa distinzione esplicita per evitare ambiguità nell'Optimizer.
+The single source of truth eliminates the possibility of misalignments between components. When an external API adds native support for filtering on a new field, only the registry is updated in one place, and the Optimizer automatically starts collapsing that node without any code changes.
 
-Il registry è un single point of failure di conoscenza: se una risorsa è definita in modo sbagliato — un operatore mancante, un campo con il tipo errato, un endpoint sbagliato — l'errore si propaga a tutti i componenti che la usano. La qualità del registry non può essere verificata automaticamente in modo completo: richiede revisione da esperti di dominio e testing di integrazione con le API esterne reali.
+The declarative format makes the registry readable and modifiable by anyone with domain knowledge, without requiring technical expertise in the pipeline. It is a configuration document, not a programming one.
 
-La gestione delle versioni del registry in ambienti con deploy frequenti è un problema pratico non banale. Un aggiornamento del registry che aggiunge un nuovo campo obbligatorio potrebbe invalidare piani generati e cached con la versione precedente. Serve una strategia di compatibilità che non è definita nel formato attuale.
+The separation between field schema and available actions reflects a real semantic distinction: the schema describes the domain object, and the actions describe what can be done with it. This separation allows the Semantic Validator to perform type checking on transversal nodes by walking up the linked list to the first contextual node and using the schema of the corresponding resource.
 
-Un punto aperto riguarda le risorse con azioni che operano su sottorisorse o su relazioni tra risorse. Il formato attuale modella bene il caso semplice di una risorsa piatta con azioni dirette, ma non copre casi come fetch(orders).filter(user.role=admin) dove il filter attraversa una relazione. Questo limite va riconosciuto esplicitamente nella documentazione per evitare che venga scoperto solo in produzione.
+---
+
+## Drawbacks, open questions, and known issues
+
+The distinction between filterable fields as direct action parameters and filterable fields as collapsible transversal operations is not fully resolved in the current format. In the proposed format, a field can appear in both `params` (as a direct parameter of the fetch action) and in `supports.filter.fields` (as a natively collapsible filter). These are two filtering mechanisms with different implementations on the external API, and the registry documentation must make this distinction explicit to avoid ambiguity in the Optimizer.
+
+The registry is a single point of knowledge failure: if a resource is defined incorrectly — a missing operator, a field with the wrong type, a wrong endpoint — the error propagates to all components that use it. Registry quality cannot be fully verified automatically: it requires review by domain experts and integration testing with the actual external APIs.
+
+Managing registry versions in environments with frequent deployments is a non-trivial practical problem. A registry update that adds a new mandatory field could invalidate plans generated and cached under the previous version. A compatibility strategy is needed that is not defined in the current format.
+
+An open question concerns resources with actions that operate on sub-resources or on relationships between resources. The current format models well the simple case of a flat resource with direct actions, but does not cover cases such as `fetch(orders).filter(user.role=admin)` where the filter crosses a relationship. This limitation should be explicitly acknowledged in the documentation to avoid discovering it only in production.

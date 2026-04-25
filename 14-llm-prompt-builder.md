@@ -1,85 +1,85 @@
 # LLM Prompt Builder
 
-## Scopo
+## Purpose
 
-Il LLM Prompt Builder è il componente che si interpone tra il Capability Registry e il Plan Generator. Il suo compito è leggere il registry e costruire il contesto da passare all'LLM: non il registry completo, ma esattamente le informazioni necessarie per generare il piano relativo alla richiesta corrente.
+The LLM Prompt Builder is the component that sits between the Capability Registry and the Plan Generator. Its job is to read the registry and construct the context to pass to the LLM: not the full registry, but exactly the information needed to generate the plan for the current request.
 
-È un componente deterministico: dato lo stesso intent strutturato e lo stesso registry, produce sempre lo stesso prompt. Non c'è logica probabilistica, non ci sono decisioni ambigue. Questo lo rende testabile in isolamento e il suo output verificabile staticamente.
-
----
-
-## Perché esiste come componente separato
-
-La tentazione ovvia è includere il registry nel system prompt direttamente, passando la definizione completa di tutte le risorse all'LLM. Questa soluzione ha due problemi.
-
-Il primo è il costo in token. Un registry con decine di risorse, ciascuna con schema, azioni e supporto per le operazioni trasversali, può essere molto grande. Passarlo intero per ogni richiesta è costoso e riempie la finestra di contesto con informazioni irrilevanti per la richiesta specifica.
-
-Il secondo è la qualità del piano generato. Un LLM che riceve più informazioni del necessario tende a produrre piani più rumorosi: task che fanno riferimento a risorse non pertinenti, parametri copiati da esempi sbagliati, ambiguità nell'interpretazione di campi con nomi simili su risorse diverse. Meno contesto rilevante significa meno variabilità indesiderata.
-
-Il LLM Prompt Builder risolve entrambi i problemi selezionando dal registry solo le risorse pertinenti alla richiesta e costruendo un contesto denso e preciso.
+It is a deterministic component: given the same structured intent and the same registry, it always produces the same prompt. There is no probabilistic logic, no ambiguous decisions. This makes it testable in isolation and its output statically verifiable.
 
 ---
 
-## Cosa produce
+## Why it exists as a separate component
 
-Il Prompt Builder produce due elementi distinti che vengono passati al Plan Generator.
+The obvious temptation is to include the registry in the system prompt directly, passing the complete definition of all resources to the LLM. This solution has two problems.
 
-Il system prompt contiene le istruzioni strutturali: il formato atteso dell'output, le regole che il Planner deve rispettare (usare solo risorse e campi dichiarati, non inferire, non ottimizzare), e il vocabolario completo delle risorse rilevanti estratto dal registry.
+The first is token cost. A registry with dozens of resources — each with a schema, actions, and transversal operation support — can be very large. Passing it in full for every request is expensive and fills the context window with information irrelevant to the specific request.
 
-Il vocabolario per ciascuna risorsa include: la descrizione leggibile, i campi dello schema con i loro tipi e valori ammessi, le azioni disponibili con i relativi parametri, e per ogni azione i campi su cui è possibile filtrare, ordinare o limitare con i rispettivi operatori. Queste informazioni delimitano lo spazio delle scelte dell'LLM: non può usare un operatore non dichiarato, non può filtrare su un campo non presente nello schema, non può riferirsi a una risorsa non inclusa nel contesto.
+The second is the quality of the generated plan. An LLM that receives more information than necessary tends to produce noisier plans: tasks referencing irrelevant resources, parameters copied from wrong examples, ambiguity in interpreting fields with similar names across different resources. Less relevant context means less unwanted variability.
 
----
-
-## La selezione delle risorse rilevanti
-
-La selezione delle risorse da includere nel contesto è la decisione più importante del Prompt Builder. Includere troppo degrada la qualità del piano. Escludere qualcosa di necessario rende impossibile generare il piano corretto.
-
-La selezione può avvenire in modi diversi a seconda della complessità del dominio. In domini con poche risorse, includere sempre tutte è accettabile. In domini con molte risorse, si usa l'intent strutturato prodotto dall'Intent Parser come chiave: le entità menzionate nell'intent identificano le risorse primarie, e le risorse correlate (se il registry le dichiara) vengono incluse automaticamente.
-
-Questa dipendenza dall'intent strutturato rafforza ulteriormente l'importanza dell'Intent Parser: un intent mal classificato può portare il Prompt Builder a includere le risorse sbagliate nel contesto, producendo un piano generato su basi errate.
+The LLM Prompt Builder solves both problems by selecting only the resources relevant to the request from the registry and constructing a dense, precise context.
 
 ---
 
-## Il vincolo fondamentale sul comportamento del Planner
+## What it produces
 
-Il system prompt prodotto dal Prompt Builder deve includere un vincolo esplicito e non ambiguo: il Planner produce il piano più esplicito possibile senza ottimizzazioni. Non collassa mai nodi trasversali nel nodo contestuale precedente, non inferisce parametri non dichiarati, non abbrevia la linked list.
+The Prompt Builder produces two distinct elements that are passed to the Plan Generator.
 
-Questo vincolo è essenziale perché l'ottimizzazione è responsabilità dell'Optimizer, non del Planner. Se il Planner ottimizza, l'output dei due canali sarà influenzato da scelte diverse di ottimizzazione che l'Optimizer non riuscirà sempre a normalizzare, producendo falsi disaccordi al Comparatore.
+The **system prompt** contains structural instructions: the expected output format, the rules the Planner must follow (use only declared resources and fields, do not infer, do not optimize), and the complete vocabulary of relevant resources extracted from the registry.
 
-La separazione di responsabilità tra Planner e Optimizer dipende interamente dalla qualità di questo vincolo nel prompt.
-
----
-
-## La relazione con i due canali
-
-Il Prompt Builder produce un solo prompt che viene passato identicamente a entrambi i canali del 2oo2. Questo è corretto: la variabilità tra i due canali deve venire dalla diversità dei modelli, non da prompt diversi. Un prompt diverso per i due canali introdurrebbe una variabile non controllata che renderebbe il disaccordo al Comparatore meno interpretabile.
+The **vocabulary for each resource** includes: the human-readable description, the schema fields with their types and permitted values, the available actions with their parameters, and for each action the fields on which filtering, sorting, or limiting are possible along with their respective operators. This information delimits the LLM's decision space: it cannot use an undeclared operator, filter on a field not present in the schema, or reference a resource not included in the context.
 
 ---
 
-## Esempio concettuale
+## Selecting relevant resources
 
-Per una richiesta come "dammi i primi 10 utenti amministratori attivi", l'Intent Parser identifica la risorsa users. Il Prompt Builder legge dal registry la definizione di users e costruisce un contesto che include:
+The selection of resources to include in the context is the Prompt Builder's most important decision. Including too much degrades plan quality. Excluding something necessary makes it impossible to generate the correct plan.
 
-La descrizione della risorsa. I campi dello schema con i loro tipi: id (string), role (string con enum admin/viewer/editor), active (boolean), created_at (date-time), last_login_at (date-time). L'azione fetch con i suoi parametri diretti e i campi filtrabili: role con operatori eq e neq, active con operatore eq. Il supporto per sort sui campi email, role, created_at. L'assenza di supporto nativo per limit.
+Selection can happen in different ways depending on domain complexity. In domains with few resources, always including all of them is acceptable. In domains with many resources, the structured intent produced by the Intent Parser is used as a key: entities mentioned in the intent identify the primary resources, and correlated resources (if the registry declares them) are included automatically.
 
-L'LLM riceve questo contesto e produce un piano che usa solo questi elementi. Non può inventare un campo status che non esiste nello schema. Non può usare un operatore gt su role perché non è dichiarato come supportato per quel campo.
-
----
-
-## Pro dell'approccio
-
-Il Prompt Builder trasforma il registry da documento di configurazione a strumento di vincolo attivo sul comportamento dell'LLM. I limiti del piano generabile non sono imposti solo dalla validazione a posteriori ma dalla costruzione del contesto a priori.
-
-Questo riduce la frequenza dei fallimenti al Semantic Validator: un LLM che non ha mai visto nel contesto un operatore non valido ha meno probabilità di usarlo.
-
-La natura deterministica del componente lo rende verificabile: per ogni intent strutturato e ogni versione del registry, il prompt prodotto è prevedibile e ispezionabile. Questo semplifica enormemente il debugging di comportamenti inattesi del Planner.
+This dependency on the structured intent further reinforces the importance of the Intent Parser: a misclassified intent can lead the Prompt Builder to include the wrong resources in the context, producing a plan generated on incorrect foundations.
 
 ---
 
-## Contro, dubbi e punti aperti
+## The fundamental constraint on Planner behavior
 
-Il Prompt Builder è l'unico punto dove si decide cosa l'LLM può vedere. Questa centralità lo rende critico: un bug nella selezione delle risorse rilevanti è invisibile al Semantic Validator, perché il validator verifica la correttezza del piano rispetto al registry ma non verifica che il Planner abbia ricevuto il contesto giusto.
+The system prompt produced by the Prompt Builder must include an explicit and unambiguous constraint: the Planner produces the most explicit plan possible, without optimizations. It never collapses transversal nodes into the preceding contextual node, never infers undeclared parameters, never abbreviates the linked list.
 
-La selezione automatica delle risorse rilevanti dall'intent strutturato funziona bene per richieste semplici ma può fallire su richieste che attraversano più risorse in modo non esplicito. Se l'intent menziona un attributo di una risorsa correlata senza nominare la risorsa, il Prompt Builder potrebbe non includerla nel contesto.
+This constraint is essential because optimization is the Optimizer's responsibility, not the Planner's. If the Planner optimizes, the output of the two channels will be influenced by different optimization choices that the Optimizer will not always be able to normalize, producing false disagreements at the Comparator.
 
-Un punto aperto riguarda la gestione del contesto quando il registry evolve durante il ciclo di vita di una richiesta. In scenari con elaborazione asincrona o con retry, è possibile che il prompt venga costruito su una versione del registry diversa da quella usata per la validazione a valle. Serve una strategia esplicita per garantire la consistenza della versione del registry lungo tutta la pipeline per una singola richiesta.
+The separation of responsibilities between Planner and Optimizer depends entirely on the quality of this constraint in the prompt.
+
+---
+
+## The relationship with the two channels
+
+The Prompt Builder produces a single prompt that is passed identically to both channels of the 2oo2. This is correct: variability between the two channels must come from the diversity of the models, not from different prompts. A different prompt for each channel would introduce an uncontrolled variable that would make disagreements at the Comparator less interpretable.
+
+---
+
+## Conceptual example
+
+For a request like "give me the first 10 active admin users," the Intent Parser identifies the `users` resource. The Prompt Builder reads the `users` definition from the registry and constructs a context that includes:
+
+The resource description. The schema fields with their types: `id` (string), `role` (string with enum admin/viewer/editor), `active` (boolean), `created_at` (date-time), `last_login_at` (date-time). The fetch action with its direct parameters and filterable fields: `role` with operators `eq` and `neq`, `active` with operator `eq`. Sort support on fields `email`, `role`, `created_at`. The absence of native limit support.
+
+The LLM receives this context and produces a plan using only these elements. It cannot invent a `status` field that does not exist in the schema. It cannot use a `gt` operator on `role` because it is not declared as supported for that field.
+
+---
+
+## Advantages of this approach
+
+The Prompt Builder transforms the registry from a configuration document into an active constraint tool on LLM behavior. The limits of what plan can be generated are not imposed only by post-hoc validation but by the construction of context upfront.
+
+This reduces the frequency of failures at the Semantic Validator: an LLM that has never seen an invalid operator in the context is less likely to use one.
+
+The component's deterministic nature makes it verifiable: for every structured intent and every registry version, the prompt produced is predictable and inspectable. This greatly simplifies the debugging of unexpected Planner behavior.
+
+---
+
+## Drawbacks, open questions, and known issues
+
+The Prompt Builder is the only point where it is decided what the LLM can see. This centrality makes it critical: a bug in the selection of relevant resources is invisible to the Semantic Validator, because the validator checks plan correctness against the registry but does not verify that the Planner received the right context.
+
+Automatic selection of relevant resources from the structured intent works well for simple requests but may fail on requests that span multiple resources in a non-explicit way. If the intent mentions an attribute of a correlated resource without naming the resource, the Prompt Builder may not include it in the context.
+
+An open question concerns context management when the registry evolves during the lifecycle of a request. In scenarios with asynchronous processing or with retries, it is possible that the prompt is built on a different registry version than the one used for downstream validation. An explicit strategy is needed to guarantee registry version consistency throughout the entire pipeline for a single request.

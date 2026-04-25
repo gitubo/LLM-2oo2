@@ -1,97 +1,97 @@
 # Semantic Validator
 
-## Scopo
+## Purpose
 
-Il Semantic Validator è il componente più ricco di conoscenza di dominio nell'intera pipeline. Opera dopo il Full Schema Validator, quindi su un documento che è già formalmente valido. Il suo compito è verificare che il piano sia corretto non solo nella forma ma nel significato: che le operazioni abbiano senso nel loro contesto, che le dipendenze riflettano le necessità semantiche del dominio, che non manchino task obbligatori, e che il piano nel suo insieme sia coerente con l'intent che lo ha originato.
+The Semantic Validator is the most domain-knowledge-rich component in the entire pipeline. It operates after the Full Schema Validator, on a document that is already formally valid. Its job is to verify that the plan is correct not only in form but in meaning: that operations make sense in their context, that dependencies reflect the semantic requirements of the domain, that no mandatory tasks are missing, and that the plan as a whole is coherent with the intent that originated it.
 
-La distinzione tra validazione sintattica e semantica è fondamentale: un piano può essere perfettamente valido secondo lo schema JSON e completamente sbagliato rispetto al problema che doveva risolvere.
-
----
-
-## Il Capability Registry come fonte di verità per la validazione
-
-Il Semantic Validator usa il Capability Registry come riferimento per una categoria specifica di controlli: la correttezza dei nodi trasversali rispetto alla risorsa su cui operano.
-
-Quando il validator incontra un nodo filter, risale la linked list fino al primo nodo contestuale e legge dal registry lo schema della risorsa corrispondente. Verifica che il campo su cui il filter opera esista nello schema, che il tipo del valore usato sia compatibile con il tipo dichiarato, e che il valore rispetti eventuali enum. Lo stesso vale per i nodi sort, che devono operare su campi esistenti nello schema.
-
-Questo tipo di controllo è strutturalmente diverso dagli invarianti assoluti e dalle regole dipendenti dall'intent: non richiede conoscenza del dominio applicativo ma solo la capacità di confrontare il piano con la definizione formale della risorsa. Il registry rende questo confronto possibile in modo deterministico.
+The distinction between syntactic and semantic validation is fundamental: a plan can be perfectly valid according to the JSON schema and completely wrong with respect to the problem it was meant to solve.
 
 ---
 
-## Le categorie di controllo
+## The Capability Registry as the source of truth for validation
 
-Il Semantic Validator esegue controlli che appartengono a due categorie con natura diversa, che è importante tenere distinte.
+The Semantic Validator uses the Capability Registry as a reference for a specific category of checks: the correctness of transversal nodes relative to the resource they operate on.
 
-La prima categoria comprende gli invarianti assoluti: regole vere indipendentemente dall'intent, perché derivano dalla semantica delle operazioni stesse. Un Limit senza Sort produce risultati non deterministici, sempre. Un nodo di scrittura senza il nodo di acquisizione del lock che lo precede è sempre un problema. Un fetch che viene dopo una trasformazione dei dati che quella stessa trasformazione dovrebbe ricevere come input è sempre circolare. Queste regole possono essere codificate deterministicamente e sono stabili nel tempo.
+When the validator encounters a `filter` node, it walks up the linked list to the first contextual node and reads the corresponding resource's schema from the registry. It verifies that the field the filter operates on exists in the schema, that the type of the value used is compatible with the declared type, and that the value conforms to any enum constraints. The same applies to `sort` nodes, which must operate on fields that exist in the schema.
 
-La seconda categoria comprende le regole dipendenti dall'intent: regole vere solo in presenza di certi tipi di intent, perché derivano da ciò che l'utente vuole ottenere. Un Limit semantico (i 10 più recenti) richiede Sort; un Limit arbitrario (dammi 10 qualsiasi) non lo richiede. Queste regole richiedono accesso all'intent strutturato prodotto dall'Intent Parser per essere applicate correttamente.
-
----
-
-## Gli invarianti assoluti
-
-Questi controlli vengono applicati sempre, indipendentemente dal contenuto dell'intent. Sono regole di buon senso del dominio che non hanno eccezioni note.
-
-La verifica dell'aciclicità del grafo delle dipendenze garantisce che non esistano dipendenze circolari. Questo può essere fatto con un algoritmo standard di rilevamento dei cicli.
-
-La verifica della connettività garantisce che ogni nodo sia raggiungibile dal grafo e che il grafo abbia un punto di partenza e un punto di arrivo ben definiti. Nodi isolati o sottografi disconnessi sono errori strutturali.
-
-Le precondizioni di operazione codificano le dipendenze semantiche obbligatorie tra tipi di task: fetch prima di transform, sort prima di limit semantico, lock prima di write. Queste regole vengono documentate come coppie (prerequisito, dipendente) con la condizione sotto cui si applicano.
-
-La checklist dei task obbligatori per tipo di operazione è la difesa principale contro le omissioni concordate: per certe categorie di intent, certi task devono essere presenti nel piano. Se un piano di tipo fetch_ordered_subset non contiene un nodo sort, il Semantic Validator lo rileva.
+This type of check is structurally different from absolute invariants and intent-dependent rules: it requires no knowledge of the application domain — only the ability to compare the plan against the resource's formal definition. The registry makes this comparison possible in a deterministic way.
 
 ---
 
-## Le regole dipendenti dall'intent
+## The categories of checks
 
-Questi controlli ricevono come input sia il piano sia l'intent strutturato prodotto dall'Intent Parser. Questo è il motivo per cui l'intent strutturato viene propagato lungo tutta la pipeline come contesto immutabile: il Semantic Validator ne ha bisogno.
+The Semantic Validator performs checks that belong to two categories with different natures, which are important to keep distinct.
 
-Un esempio concreto: il campo requires_realtime nell'intent strutturato, se vero, esclude la presenza di task di caching nel piano. Il Semantic Validator verifica questa coerenza. Se il piano include un task di caching e l'intent specifica dati in tempo reale, c'è un'inconsistenza.
+The first category comprises **absolute invariants**: rules that are true regardless of intent, because they derive from the semantics of the operations themselves. A Limit without a Sort produces non-deterministic results — always. A write node without a preceding lock acquisition is always a problem. A fetch that comes after a transformation that was supposed to receive that fetch's output as input is always circular. These rules can be deterministically encoded and are stable over time.
 
-Un altro esempio: il campo ordering.required nell'intent strutturato, se vero, rende obbligatoria la presenza di un nodo sort nel piano. Se ordering.required è false, il sort non è obbligatorio anche se il piano include un limit.
-
-La lista completa di queste regole è un documento di dominio, non tecnico. Va costruita e mantenuta dagli esperti del dominio specifico in cui il sistema opera.
+The second category comprises **intent-dependent rules**: rules that are only true in the presence of certain intent types, because they derive from what the user wants to achieve. A semantic Limit (the 10 most recent) requires a Sort; an arbitrary Limit (give me any 10) does not. These rules require access to the structured intent produced by the Intent Parser in order to be applied correctly.
 
 ---
 
-## La dipendenza dall'Intent Parser
+## Absolute invariants
 
-Il Semantic Validator dipende dalla correttezza dell'intent strutturato per applicare le regole della seconda categoria. Se l'Intent Parser ha prodotto un intent sbagliato, il Semantic Validator applicherà le regole corrette per l'intent sbagliato, approvando o rifiutando il piano in modo non corrispondente alle intenzioni reali dell'utente.
+These checks are applied always, regardless of the intent's content. They are common-sense rules of the domain that have no known exceptions.
 
-Questo è uno dei motivi per cui la qualità dell'Intent Parser è così critica: i suoi errori si propagano non solo al Plan Generator ma anche al Semantic Validator, che è l'ultimo componente prima del Comparatore ad avere accesso alla conoscenza di dominio.
+**Acyclicity verification of the dependency graph** guarantees that no circular dependencies exist. This can be done with a standard cycle detection algorithm.
 
----
+**Connectivity verification** guarantees that every node is reachable from the graph, and that the graph has a well-defined entry point and exit point. Isolated nodes or disconnected subgraphs are structural errors.
 
-## Comportamento in caso di fallimento
+**Operation preconditions** encode the mandatory semantic dependencies between task types: fetch before transform, sort before semantic limit, lock before write. These rules are documented as (prerequisite, dependent) pairs with the condition under which they apply.
 
-Il fallimento del Semantic Validator è più serio di quello del Full Schema Validator. Significa che il piano era formalmente corretto ma semanticamente sbagliato. Questo tipo di errore non può essere corretto automaticamente: richiederebbe di capire perché il modello ha prodotto un piano semanticamente sbagliato, il che implica o un problema nel prompt o un caso non previsto dalla tassonomia.
-
-Il fallimento viene loggato con dettaglio, categorizzato per tipo di regola violata, e tipicamente porta a escalation verso revisione umana piuttosto che a retry automatico. Un retry sullo stesso input con lo stesso prompt ha alta probabilità di produrre lo stesso errore semantico.
+**The mandatory task checklist per operation type** is the primary defense against correlated omissions: for certain categories of intent, certain tasks must be present in the plan. If a plan of type `fetch_ordered_subset` contains no sort node, the Semantic Validator detects it.
 
 ---
 
-## Esempio pratico
+## Intent-dependent rules
 
-Un piano arriva al Semantic Validator con questa sequenza: fetch di orders, filter per status, limit a 10. L'intent strutturato contiene ordering.required: true con campo created_at e direzione DESC.
+These checks receive both the plan and the structured intent produced by the Intent Parser as input. This is why the structured intent is propagated as immutable context throughout the entire pipeline: the Semantic Validator needs it.
 
-Il Semantic Validator verifica le regole dipendenti dall'intent e trova la violazione: ordering.required è true ma il piano non contiene un nodo sort. Il piano viene rifiutato con una descrizione precisa: "il piano non soddisfa il requisito di ordinamento esplicitato nell'intent, un nodo sort con campo created_at e direzione DESC deve precedere il nodo limit".
+A concrete example: the `requires_realtime` field in the structured intent, if true, excludes the presence of caching tasks in the plan. The Semantic Validator verifies this coherence. If the plan includes a caching task and the intent specifies real-time data, there is an inconsistency.
 
-Questo fallimento viene loggato e categorizzato come omissione di task obbligatorio per intent con ordering. L'analisi di questo pattern nel tempo può rivelare che il modello omette sistematicamente il sort quando il limit è esplicito nell'input, suggerendo di aggiungere un esempio specifico nel prompt.
+Another example: the `ordering.required` field in the structured intent, if true, makes the presence of a sort node in the plan mandatory. If `ordering.required` is false, a sort is not required even if the plan includes a limit.
 
----
-
-## Pro dell'approccio
-
-Il Semantic Validator è il componente che porta conoscenza di dominio nella pipeline in modo esplicito, testabile, e manutenibile. Le regole sono documentate, le eccezioni sono gestibili, il comportamento è prevedibile.
-
-La separazione tra invarianti assoluti e regole dipendenti dall'intent rende il componente più facile da ragionare: gli invarianti sono stabili e non richiedono manutenzione frequente, le regole dipendenti evolvono con la tassonomia degli intent.
+The complete list of these rules is a domain document, not a technical one. It must be built and maintained by domain experts in the specific domain where the system operates.
 
 ---
 
-## Contro, dubbi e punti aperti
+## The dependency on the Intent Parser
 
-La qualità del Semantic Validator dipende completamente dalla completezza della checklist e delle regole di dominio. Le regole mancanti non producono errori visibili: producono piani validati che poi falliscono in esecuzione o producono risultati sbagliati. Scoprire le regole mancanti richiede osservazione del comportamento in produzione, il che significa che il sistema imparerà alcune di esse solo dopo aver sbagliato.
+The Semantic Validator depends on the correctness of the structured intent to apply the second category of rules. If the Intent Parser has produced a wrong intent, the Semantic Validator will apply the correct rules for the wrong intent — approving or rejecting the plan in ways that do not correspond to the user's actual intentions.
 
-Il confine tra responsabilità del Semantic Validator e responsabilità dell'Optimizer non è sempre netto. Alcune trasformazioni (come collassare due filter sequenziali in uno con AND) potrebbero essere considerate ottimizzazioni o potrebbero essere considerate correzioni di un piano mal strutturato. La scelta di dove mettere una certa logica ha implicazioni sull'ordine di esecuzione e sulla visibilità degli errori.
+This is one of the reasons why the quality of the Intent Parser is so critical: its errors propagate not only to the Plan Generator but also to the Semantic Validator, which is the last component before the Comparator to have access to domain knowledge.
 
-Un punto aperto rilevante riguarda la gestione delle regole di dominio che cambiano nel tempo. Se una precondizione obbligatoria viene rimossa o aggiunta, i piani generati prima della modifica potrebbero non essere più validi. Serve un meccanismo di versioning delle regole che permetta di gestire questa transizione senza invalidiamo piani correttamente generati sotto le regole precedenti.
+---
+
+## Behavior on failure
+
+A Semantic Validator failure is more serious than a Full Schema Validator failure. It means the plan was formally correct but semantically wrong. This type of error cannot be corrected automatically: it would require understanding why the model produced a semantically wrong plan, which implies either a prompt problem or a case not anticipated by the taxonomy.
+
+The failure is logged with detail, categorized by the type of rule violated, and typically triggers escalation to human review rather than automatic retry. A retry on the same input with the same prompt has a high probability of producing the same semantic error.
+
+---
+
+## Practical example
+
+A plan arrives at the Semantic Validator with the following sequence: fetch of orders, filter by status, limit to 10. The structured intent contains `ordering.required: true` with field `created_at` and direction `DESC`.
+
+The Semantic Validator checks the intent-dependent rules and finds the violation: `ordering.required` is true but the plan contains no sort node. The plan is rejected with a precise description: "the plan does not satisfy the ordering requirement expressed in the intent — a sort node on field `created_at` with direction `DESC` must precede the limit node."
+
+This failure is logged and categorized as a mandatory task omission for an intent with ordering. Analyzing this pattern over time may reveal that the model systematically omits the sort when a limit is explicit in the input, suggesting that a specific example should be added to the prompt.
+
+---
+
+## Advantages of this approach
+
+The Semantic Validator is the component that introduces domain knowledge into the pipeline in an explicit, testable, and maintainable way. Rules are documented, exceptions are manageable, and behavior is predictable.
+
+The separation between absolute invariants and intent-dependent rules makes the component easier to reason about: invariants are stable and rarely require maintenance; intent-dependent rules evolve along with the intent taxonomy.
+
+---
+
+## Drawbacks, open questions, and known issues
+
+The quality of the Semantic Validator depends entirely on the completeness of the checklist and domain rules. Missing rules do not produce visible errors: they produce validated plans that then fail during execution or produce wrong results. Discovering missing rules requires observing production behavior, which means the system will learn some of them only after making a mistake.
+
+The boundary between the Semantic Validator's responsibilities and the Optimizer's is not always sharp. Some transformations — such as collapsing two sequential filters into one with AND — could be considered optimizations or could be considered corrections to a poorly structured plan. The choice of where to place a given piece of logic has implications for execution order and error visibility.
+
+An open question concerns the management of domain rules that change over time. If a mandatory precondition is removed or added, plans generated before the change may no longer be valid. A rule versioning mechanism is needed that allows this transition to be managed without invalidating plans that were correctly generated under the previous rules.

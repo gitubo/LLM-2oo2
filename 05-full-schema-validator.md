@@ -1,81 +1,81 @@
-# Full Schema Validator (Validazione Sintattica Completa)
+# Full Schema Validator (Complete Syntactic Validation)
 
-## Scopo
+## Purpose
 
-Il Full Schema Validator è il secondo livello di validazione sintattica e opera dopo il Sanitizer. A questo punto il documento ha già una struttura di base verificata dal Pre-Validator e ha subito le correzioni recuperabili del Sanitizer. Il Full Schema Validator applica la verifica formale completa contro lo schema JSON definito per il piano d'azione.
+The Full Schema Validator is the second level of syntactic validation and operates after the Sanitizer. At this point, the document already has a basic structure verified by the Pre-Validator and has undergone the Sanitizer's recoverable corrections. The Full Schema Validator applies formal, complete verification against the JSON schema defined for the action plan.
 
-Il suo comportamento è binario: il documento rispetta lo schema oppure no. Non corregge, non inferisce, non applica default. Se qualcosa non va, produce un messaggio di errore preciso che indica esattamente quale campo, quale tipo atteso, quale valore trovato.
-
----
-
-## Perché esiste una separazione tra Pre-Validator e Full Schema Validator
-
-Applicare direttamente il Full Schema Validator sull'output grezzo del modello produrrebbe un'alta frequenza di fallimenti per deviazioni banali che il Sanitizer avrebbe potuto correggere. Questo abbassa la disponibilità del sistema inutilmente e rende i messaggi di errore meno informativi, perché non si può distinguere un errore strutturale reale da una stringa dove ci si aspettava un numero.
-
-Applicando il Full Schema Validator dopo il Sanitizer, quasi tutti i fallimenti che raggiungono questo stadio sono errori reali, non deviazioni banali di formato. I fallimenti sono quindi più significativi e più informativi.
+Its behavior is binary: the document either conforms to the schema or it does not. It does not correct, infer, or apply defaults. If something is wrong, it produces a precise error message that indicates exactly which field is at fault, which type was expected, and which value was found.
 
 ---
 
-## Cosa verifica
+## Why the Pre-Validator and Full Schema Validator are separate
 
-Lo schema JSON formale copre la struttura completa del documento, inclusi tutti i campi, i loro tipi, i valori ammessi per i campi enumerati, i vincoli di formato, le relazioni di cardinalità (array con almeno N elementi, stringhe con un pattern specifico), e i campi obbligatori versus opzionali.
+Applying the Full Schema Validator directly to raw model output would produce a high failure rate due to trivial deviations that the Sanitizer could have corrected. This unnecessarily lowers system availability and makes error messages less informative, because it becomes impossible to distinguish a genuine structural error from a string where a number was expected.
 
-In particolare, per i nodi del piano, verifica che ogni nodo abbia un identificatore univoco, che il tipo di operazione appartenga al vocabolario definito, che i campi specifici di ciascun tipo di operazione siano presenti e corretti, e che le dipendenze dichiarate referenzino identificatori che esistono nel piano.
-
-Quest'ultimo controllo, la verifica delle referenze nelle dipendenze, è tecnicamente fuori dal perimetro di un JSON Schema puro ma è essenziale per garantire che il grafo sia internamente consistente. Può essere implementato come un passaggio aggiuntivo dopo la validazione dello schema.
+By applying the Full Schema Validator after the Sanitizer, almost all failures that reach this stage are real errors rather than trivial format deviations. Failures are therefore more meaningful and more informative.
 
 ---
 
-## Comportamento in caso di fallimento
+## What it verifies
 
-Il fallimento del Full Schema Validator produce un evento strutturato che include il trace_id, il canale, la lista degli errori di validazione con path JSON precisi, e una categorizzazione dell'errore.
+The formal JSON schema covers the complete structure of the document, including all fields, their types, permitted values for enumerated fields, format constraints, cardinality relationships (arrays with at least N elements, strings matching a specific pattern), and mandatory versus optional fields.
 
-Questo evento non porta automaticamente a un retry del Plan Generator. Prima viene analizzato: il fallimento è un caso non previsto dallo schema che suggerisce di aggiornare il Sanitizer? È un errore che emerge sistematicamente su un tipo di input specifico, indicando un problema nel prompt? È un caso genuinamente raro che richiede escalation?
+For plan nodes specifically, it verifies that every node has a unique identifier, that the operation type belongs to the defined vocabulary, that the fields specific to each operation type are present and correct, and that the dependencies declared in each node reference identifiers that exist in the plan.
 
-Il retry al Plan Generator è una possibilità ma non la risposta automatica. Un retry che usa lo stesso prompt sullo stesso input ha alta probabilità di produrre lo stesso errore.
-
----
-
-## Il valore diagnostico dei fallimenti
-
-I fallimenti al Full Schema Validator sono informazione preziosa, non semplici errori operativi. Nel tempo, i pattern di fallimento rivelano molto sulla qualità del sistema:
-
-Se lo stesso campo fallisce frequentemente con lo stesso tipo di errore, il prompt del Plan Generator non sta istruendo adeguatamente il modello su quel campo, oppure il Sanitizer dovrebbe coprire quella correzione.
-
-Se i fallimenti emergono su tipi specifici di operazione, quei task potrebbero essere particolarmente difficili da generare correttamente per il modello, il che suggerisce di aggiungere esempi specifici nel prompt o di rivedere la definizione di quel tipo di operazione.
-
-Se i fallimenti sono rari e distribuiti su molti campi diversi, si tratta probabilmente di variabilità normale del modello che il Sanitizer non è in grado di coprire completamente. Questo può essere accettabile se il tasso rimane sotto una certa soglia.
+This last check — verifying references in the dependency list — is technically outside the scope of a pure JSON Schema, but it is essential for ensuring the graph is internally consistent. It can be implemented as an additional pass after schema validation.
 
 ---
 
-## Relazione con lo schema di dominio
+## Behavior on failure
 
-Lo schema JSON validato dal Full Schema Validator è l'artefatto formale che definisce il contratto tra il Plan Generator e il resto della pipeline. Tutti i componenti successivi, dal Semantic Validator all'Optimizer al Binding, possono fare assunzioni su ciò che hanno ricevuto basandosi su questo contratto.
+A Full Schema Validator failure produces a structured event that includes the `trace_id`, the channel, the list of validation errors with precise JSON paths, and an error categorization.
 
-La gestione delle versioni dello schema è un aspetto critico. Quando lo schema evolve, tutti i componenti che dipendono da esso devono essere aggiornati coordinatamente. Un meccanismo di versioning esplicito nel campo metadata del documento è utile per rilevare disallineamenti.
+This event does not automatically trigger a Plan Generator retry. It is first analyzed: is the failure an unanticipated case that suggests updating the Sanitizer? Is it an error that emerges systematically on a specific input type, indicating a prompt problem? Is it a genuinely rare case that requires escalation?
 
----
-
-## Esempio pratico
-
-Un piano con tre nodi arriva al Full Schema Validator dopo il Sanitizer. Il nodo di tipo sort ha il campo direction con valore "descending" invece del valore atteso "DESC". Il Sanitizer non ha corretto questo perché la regola di normalizzazione per i valori dell'enum direction non è stata inclusa (è un campo con valori ammessi specifici, e "descending" è comprensibile ma non valido).
-
-Il Full Schema Validator fallisce con un messaggio preciso: task[2].direction deve essere uno di ["ASC", "DESC"], trovato "descending". Questo fallimento va analizzato: dovrebbe essere il Sanitizer a normalizzare questo pattern? È un caso abbastanza comune da giustificarlo?
+Retrying the Plan Generator is one option, but not the automatic response. A retry using the same prompt on the same input has a high probability of producing the same error.
 
 ---
 
-## Pro dell'approccio
+## The diagnostic value of failures
 
-La verifica formale completa tramite JSON Schema è deterministico, testabile, e non dipende da componenti probabilistici. La sua correttezza può essere garantita con test unitari esaustivi.
+Failures at the Full Schema Validator are valuable information, not mere operational errors. Over time, failure patterns reveal a great deal about system quality.
 
-Separare la validazione sintattica dalla validazione semantica (che arriva dopo) mantiene ciascun validatore focalizzato su una categoria di problemi. Il Full Schema Validator non sa nulla di semantica del dominio e non deve saperne.
+If the same field fails repeatedly with the same type of error, the Plan Generator's prompt is not adequately instructing the model on that field — or the Sanitizer should cover that correction.
+
+If failures emerge on specific operation types, those tasks may be particularly difficult for the model to generate correctly, which suggests adding specific examples to the prompt or revisiting the definition of that operation type.
+
+If failures are rare and distributed across many different fields, this is likely normal model variability that the Sanitizer cannot fully cover. This may be acceptable if the rate stays below a certain threshold.
 
 ---
 
-## Contro, dubbi e punti aperti
+## Relationship with the domain schema
 
-Lo schema JSON deve essere mantenuto allineato con il vocabolario dei task e le aspettative dei componenti successivi. In ambienti con sviluppo attivo, questa sincronizzazione richiede disciplina e automazione.
+The JSON schema validated by the Full Schema Validator is the formal artifact that defines the contract between the Plan Generator and the rest of the pipeline. All subsequent components — from the Semantic Validator to the Optimizer to the Binding — can make assumptions about what they have received based on this contract.
 
-I JSON Schema validator standard non supportano tutti i tipi di vincoli che si potrebbero volere, in particolare vincoli che richiedono di guardare più campi contemporaneamente (ad esempio, se task_type è "sort" allora il campo sort_field è obbligatorio). Questi vincoli possono essere implementati come validazioni aggiuntive fuori dallo schema puro, ma introducono complessità.
+Schema versioning is a critical aspect. When the schema evolves, all components that depend on it must be updated in a coordinated manner. An explicit versioning mechanism in the document's `metadata` field is useful for detecting misalignments.
 
-Un punto aperto riguarda la profondità della verifica delle referenze nelle dipendenze. Verificare che ogni dipendenza punti a un nodo esistente è relativamente semplice. Verificare che il grafo risultante sia aciclico è un passo aggiuntivo che tecnicamente appartiene al Semantic Validator ma potrebbe essere implementato qui per semplicità. La scelta del confine tra i due componenti non è obbligata.
+---
+
+## Practical example
+
+A plan with three nodes arrives at the Full Schema Validator after the Sanitizer. The `sort` node has the `direction` field set to `"descending"` instead of the expected value `"DESC"`. The Sanitizer did not correct this because the normalization rule for `direction` enum values was not included (it is a field with specific permitted values, and `"descending"` is understandable but invalid).
+
+The Full Schema Validator fails with a precise message: `task[2].direction` must be one of `["ASC", "DESC"]`, found `"descending"`. This failure warrants analysis: should the Sanitizer normalize this pattern? Is it common enough to justify it?
+
+---
+
+## Advantages of this approach
+
+Formal verification via JSON Schema is deterministic, testable, and independent of probabilistic components. Its correctness can be guaranteed with exhaustive unit tests.
+
+Separating syntactic validation from semantic validation (which comes later) keeps each validator focused on one category of problems. The Full Schema Validator knows nothing about domain semantics and does not need to.
+
+---
+
+## Drawbacks, open questions, and known issues
+
+The JSON schema must be kept aligned with the task vocabulary and the expectations of downstream components. In environments with active development, this synchronization requires discipline and automation.
+
+Standard JSON Schema validators do not support all the types of constraints that might be desired — in particular, constraints that require looking at multiple fields simultaneously (for example, if `task_type` is `"sort"` then the `sort_field` field is mandatory). These constraints can be implemented as additional validations outside the pure schema, but they add complexity.
+
+An open question concerns the depth of reference verification in dependencies. Verifying that every dependency points to an existing node is relatively straightforward. Verifying that the resulting graph is acyclic is an additional step that technically belongs to the Semantic Validator but could be implemented here for simplicity. The choice of where to draw the boundary between the two components is not fixed.

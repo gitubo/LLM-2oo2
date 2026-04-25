@@ -1,95 +1,95 @@
 # Feedback Loop
 
-## Scopo e premessa
+## Purpose and premise
 
-Il feedback loop è il meccanismo attraverso cui il sistema usa i dati prodotti in produzione per migliorare se stesso nel tempo. Senza di lui, il sistema sarebbe statico: le sue capacità rimarrebbero quelle del momento del deploy, indipendentemente da quante informazioni accumula sull'uso reale.
+The feedback loop is the mechanism through which the system uses data produced in production to improve itself over time. Without it, the system would be static: its capabilities would remain those of the deployment moment, regardless of how much information it accumulates about real-world usage.
 
-La premessa fondamentale è che un feedback loop mal progettato è più pericoloso di nessun feedback loop. Un sistema che impara dai propri errori senza verificare che stia imparando la cosa giusta amplifica i propri bias invece di correggerli. Progettare il feedback loop significa progettare non solo il meccanismo di apprendimento ma soprattutto i vincoli che impediscono l'amplificazione degli errori.
-
----
-
-## I due tipi di feedback loop e perché non sono equivalenti
-
-Un loop di miglioramento usa i dati di produzione per identificare dove il sistema funziona male e per guidare modifiche che migliorano quella situazione. Richiede dati affidabili, processi di review, e misure di effetto delle modifiche.
-
-Un loop di degrado si verifica quando il sistema usa il proprio output come fonte di truth per migliorarsi. Se gli errori non sono etichettati correttamente, il sistema impara a produrre gli stessi errori con maggiore frequenza. Questo è un rischio concreto nei sistemi basati su LLM, dove il confine tra output corretto e output plausibile ma sbagliato non è sempre visibile automaticamente.
-
-La distinzione operativa tra i due è il ruolo della verifica umana: il loop di miglioramento richiede che almeno una parte del segnale di feedback sia verificata da esseri umani con conoscenza di dominio. Il loop di degrado tipicamente bypassa questa verifica per ragioni di scalabilità, e paga il prezzo in qualità.
+The fundamental premise is that a poorly designed feedback loop is more dangerous than no feedback loop at all. A system that learns from its own errors without verifying that it is learning the right thing amplifies its biases instead of correcting them. Designing the feedback loop means designing not just the learning mechanism but above all the constraints that prevent error amplification.
 
 ---
 
-## Le sorgenti di segnale
+## The two types of feedback loop and why they are not equivalent
 
-Non tutte le sorgenti di segnale hanno lo stesso valore per il feedback loop. Ordinarle per affidabilità è importante per capire dove investire.
+An **improvement loop** uses production data to identify where the system performs poorly and to guide changes that improve that situation. It requires reliable data, review processes, and measurements of the effect of changes.
 
-Il ground truth dell'esecuzione è il segnale più affidabile: il piano è stato eseguito e il risultato era corretto o sbagliato. Questo segnale è binario, non ambiguo, e corrisponde direttamente alla qualità che si vuole misurare. Il problema è che richiede di sapere se il risultato era corretto, il che non è sempre automaticamente verificabile.
+A **degradation loop** occurs when the system uses its own output as the source of truth for improving itself. If errors are not correctly labeled, the system learns to produce the same errors with greater frequency. This is a concrete risk in LLM-based systems, where the boundary between correct output and plausible-but-wrong output is not always automatically visible.
 
-Il feedback esplicito di un operatore umano che ha visto l'output e può dire se era appropriato è altamente affidabile ma raro e non scalabile. È prezioso per costruire il golden dataset ma non può essere la sola fonte di segnale per il miglioramento continuo.
-
-Il disaccordo del Comparatore è un segnale debole: segnala che c'era un problema ma non dice chi aveva ragione. Non va usato come segnale diretto di qualità ma come indicatore che un caso merita revisione umana.
-
-Le correzioni del Sanitizer sono un segnale indiretto: non dicono se il piano finale era corretto, ma dicono che il modello ha prodotto un output che si discostava dallo schema atteso in un modo specifico. Questo è utile per identificare pattern sistematici nel comportamento del modello.
-
-La confidence dell'Intent Parser è un segnale predittivo: non dice se l'output era sbagliato, dice quanto era probabile che fosse sbagliato. Utile per prioritizzare i casi da revisionare, non per alimentare direttamente il miglioramento.
+The operational distinction between the two is the role of human verification: an improvement loop requires that at least a portion of the feedback signal be verified by human beings with domain knowledge. A degradation loop typically bypasses this verification for scalability reasons, and pays the price in quality.
 
 ---
 
-## I tre ritmi del feedback loop
+## Signal sources
 
-Il feedback loop non opera a una sola velocità. Componenti diversi del sistema evolvono su scale temporali diverse, e tentare di aggiornare tutto alla stessa velocità porta a instabilità o a lentezza.
+Not all signal sources have the same value for the feedback loop. Ordering them by reliability is important for understanding where to invest.
 
-Il ritmo real-time, nell'ordine dei secondi, è appropriato per le soglie operative: la soglia di agreement del Comparatore, il numero massimo di retry, i timeout. Questi parametri possono essere aggiustati automaticamente in risposta a condizioni anomale senza richiedere review umana, perché sono reversibili immediatamente e hanno effetti limitati.
+**Execution ground truth** is the most reliable signal: the plan was executed and the result was correct or wrong. This signal is binary, unambiguous, and directly corresponds to the quality being measured. The problem is that it requires knowing whether the result was correct — which is not always automatically verifiable.
 
-Il ritmo periodico, nell'ordine dei giorni, è appropriato per i prompt dei modelli, le regole del Sanitizer, e la checklist del Semantic Validator. Questi aggiornamenti richiedono analisi dei pattern aggregati, una decisione umana, e test di regressione sul golden dataset prima del deploy. Non sono urgenti ma sono importanti.
+**Explicit feedback from a human operator** who has seen the output and can say whether it was appropriate is highly reliable but rare and not scalable. It is valuable for building the golden dataset but cannot be the sole signal source for continuous improvement.
 
-Il ritmo lungo, nell'ordine delle settimane o dei mesi, è appropriato per cambiamenti alla tassonomia degli intent, allo schema JSON, ai modelli LLM, e alle regole dell'Optimizer. Questi cambiamenti hanno impatti a cascata su molti componenti e richiedono un processo formale di coordinamento, testing esteso, e deploy pianificato.
+**Comparator disagreement** is a weak signal: it signals that there was a problem but does not say which channel was right. It should not be used as a direct quality signal but as an indicator that a case warrants human review.
 
----
+**Sanitizer corrections** are an indirect signal: they do not say whether the final plan was correct, but they say that the model produced output that deviated from the expected schema in a specific way. This is useful for identifying systematic patterns in model behavior.
 
-## Il golden dataset
-
-Il golden dataset è il patrimonio più importante del sistema. È una raccolta di esempi verificati da esperti di dominio, ciascuno con l'input originale, l'intent strutturato atteso, e le proprietà del piano corretto. Cresce nel tempo con ogni caso revisionato dalla human review queue.
-
-Ha tre usi distinti e ugualmente importanti. Come base per i test di regressione: ogni modifica al sistema viene verificata contro il golden dataset per garantire che non abbia peggiorato i casi noti. Come benchmark per confrontare versioni diverse dei modelli: quando un modello viene aggiornato, il golden dataset permette di misurare oggettivamente se il comportamento è migliorato o peggiorato. Come training signal pulito: se si vuole fare fine-tuning di un modello, il golden dataset è l'unica fonte di dati verificati disponibile.
-
-La qualità del golden dataset è più importante della sua dimensione. Cento esempi accuratamente selezionati e verificati sono più utili di mille esempi generati automaticamente senza verifica.
+**Intent Parser confidence** is a predictive signal: it does not say whether the output was wrong, but it says how likely it was to be wrong. Useful for prioritizing cases to review, not for feeding improvement directly.
 
 ---
 
-## La human review queue
+## The three feedback loop rhythms
 
-I casi che richiedono revisione umana vengono inseriti in una coda strutturata. Ogni caso nella coda include il trace_id, il motivo della revisione, l'input originale, i due piani prodotti dai canali, il diff del Comparatore, e una domanda specifica a cui il revisore deve rispondere.
+The feedback loop does not operate at a single speed. Different components of the system evolve on different time scales, and attempting to update everything at the same speed leads to instability or stagnation.
 
-La domanda specifica è importante: non si chiede al revisore di rileggere tutto dall'inizio e capire autonomamente cosa è successo. Gli si presenta il contesto già strutturato e una domanda precisa come "il piano A o il piano B è più coerente con questo intent?". Questo riduce il carico cognitivo e aumenta la consistenza delle risposte.
+**Real-time rhythm**, on the order of seconds, is appropriate for operational thresholds: the Comparator agreement threshold, the maximum number of retries, timeouts. These parameters can be adjusted automatically in response to anomalous conditions without requiring human review, because they are immediately reversible and have limited effects.
 
-Ogni revisione produce tre output: un verdetto sul caso specifico che risolve l'escalation, un'etichetta per il golden dataset, e una nota opzionale su pattern osservati che potrebbe suggerire modifiche al sistema.
+**Periodic rhythm**, on the order of days, is appropriate for model prompts, Sanitizer rules, and Semantic Validator checklists. These updates require analysis of aggregated patterns, a human decision, and regression testing on the golden dataset before deployment. They are not urgent but they are important.
 
----
-
-## La contaminazione del feedback
-
-Il rischio principale del feedback loop è la contaminazione: usare come segnale di qualità dati che non sono stati verificati e che potrebbero essere sbagliati.
-
-Il principio di separazione del segnale stabilisce quali sorgenti possono alimentare quali tipi di aggiornamento. Il segnale verificato da umano (ground truth di esecuzione, feedback esplicito, revisione nella human review queue) può alimentare aggiornamenti ai prompt, allo schema, alle regole. Il segnale automatico non verificato (disaccordo del Comparatore, confidence bassa dell'Intent Parser) può solo aprire un caso nella human review queue o aggiustare soglie operative, mai aggiornare direttamente la logica del sistema.
-
-Questo principio riduce la scalabilità del feedback loop ma ne garantisce la correttezza. È un compromesso consapevole.
+**Long rhythm**, on the order of weeks or months, is appropriate for changes to the intent taxonomy, the JSON schema, the LLM models, and Optimizer rules. These changes have cascading impacts across many components and require a formal coordination process, extensive testing, and planned deployment.
 
 ---
 
-## Il degrado silenzioso e come rilevarlo
+## The golden dataset
 
-La forma più pericolosa di degrado del sistema non è il fallimento improvviso ma il peggioramento lento e graduale. Le metriche aggregate sembrano stabili perché i casi che degradano sono una minoranza, ma quella minoranza cresce nel tempo.
+The golden dataset is the system's most important asset. It is a collection of examples verified by domain experts, each containing the original input, the expected structured intent, and the properties of the correct plan. It grows over time with each case reviewed through the human review queue.
 
-Le cause tipiche di degrado silenzioso sono la deriva della distribuzione degli input (gli utenti iniziano a usare il sistema in modi non previsti), gli aggiornamenti non annunciati dei modelli LLM da parte dei fornitori, e l'invecchiamento delle regole di dominio in risposta a cambiamenti del business.
+It has three distinct and equally important uses. As a basis for regression testing: every change to the system is verified against the golden dataset to ensure it has not degraded known cases. As a benchmark for comparing different model versions: when a model is updated, the golden dataset makes it possible to objectively measure whether behavior improved or worsened. As a clean training signal: if a model is to be fine-tuned, the golden dataset is the only source of verified data available.
 
-Il canary system descritto nel documento di osservabilità è il meccanismo principale per rilevare questo tipo di degrado. Ma anche analizzare la distribuzione dei casi nella human review queue nel tempo è utile: se emergono nuove categorie di casi che prima non venivano escalati, questo segnala che qualcosa nel dominio è cambiato.
+The quality of the golden dataset is more important than its size. One hundred carefully selected and verified examples are more useful than one thousand automatically generated and unverified examples.
 
 ---
 
-## Punti aperti
+## The human review queue
 
-Il punto più difficile del feedback loop è ottenere ground truth affidabile a scala. Verificare manualmente l'esito di ogni piano eseguito è impossibile. Verificarne un campione statisticamente rappresentativo è necessario ma richiede risorse e processi. Automatizzare la verifica è possibile solo per categorie di operazioni dove esiste un oracolo (un sistema di riferimento che può dire se il risultato era corretto), e non sempre questo oracolo esiste.
+Cases requiring human review are inserted into a structured queue. Each case in the queue includes the `trace_id`, the reason for review, the original input, the two plans produced by the channels, the Comparator diff, and a specific question for the reviewer to answer.
 
-La gestione del feedback loop in ambienti regolamentati dove ogni modifica al sistema richiede un processo formale di approvazione è un problema aperto. I ritmi naturali del feedback loop, soprattutto quello periodico, possono essere incompatibili con processi di approvazione che richiedono settimane. Trovare un equilibrio tra la velocità di miglioramento e i requisiti regolatori è una sfida specifica di certi domini che non ha una soluzione universale.
+The specific question matters: the reviewer is not asked to re-read everything from scratch and independently figure out what happened. They are presented with already-structured context and a precise question such as "is plan A or plan B more coherent with this intent?" This reduces cognitive load and increases response consistency.
 
-Un ultimo punto riguarda la gestione del feedback loop quando il sistema è nuovo e il golden dataset è piccolo. Nelle prime settimane di produzione, quasi tutti i dati sono nuovi e non verificati. Il feedback loop deve essere molto conservativo in questa fase, rischiando di perdere opportunità di miglioramento rapido. Trovare il giusto punto di equilibrio tra prudenza e velocità di apprendimento nelle fasi iniziali è una decisione che dipende fortemente dal dominio e dalla tolleranza al rischio.
+Each review produces three outputs: a verdict on the specific case that resolves the escalation, a label for the golden dataset, and an optional note on observed patterns that might suggest system changes.
+
+---
+
+## Feedback contamination
+
+The main risk of the feedback loop is contamination: using unverified data that may be wrong as a quality signal.
+
+The **signal separation principle** establishes which sources may feed which types of updates. Human-verified signal (execution ground truth, explicit feedback, human review queue review) may feed updates to prompts, schemas, and rules. Unverified automatic signal (Comparator disagreement, low Intent Parser confidence) may only open a case in the human review queue or adjust operational thresholds — never directly update the system's logic.
+
+This principle reduces the feedback loop's scalability but guarantees its correctness. It is a deliberate trade-off.
+
+---
+
+## Silent degradation and how to detect it
+
+The most dangerous form of system degradation is not sudden failure but slow, gradual deterioration. Aggregate metrics appear stable because the degrading cases are a minority — but that minority grows over time.
+
+Typical causes of silent degradation include: input distribution drift (users start using the system in unanticipated ways), unannounced LLM model updates by providers, and the aging of domain rules in response to business changes.
+
+The canary system described in the observability document is the primary mechanism for detecting this type of degradation. But analyzing the distribution of cases in the human review queue over time is also useful: if new categories of cases emerge that were not previously being escalated, this signals that something in the domain has changed.
+
+---
+
+## Open questions
+
+The hardest point of the feedback loop is obtaining reliable ground truth at scale. Manually verifying the outcome of every executed plan is impossible. Verifying a statistically representative sample is necessary but requires resources and processes. Automating verification is only possible for categories of operations where an oracle exists — a reference system that can say whether the result was correct — and this oracle does not always exist.
+
+Managing the feedback loop in regulated environments where every system change requires a formal approval process is an open problem. The natural rhythms of the feedback loop — especially the periodic one — may be incompatible with approval processes that take weeks. Finding a balance between the speed of improvement and regulatory requirements is a challenge specific to certain domains and has no universal solution.
+
+A final point concerns managing the feedback loop when the system is new and the golden dataset is small. In the first weeks of production, almost all data is new and unverified. The feedback loop must be very conservative during this phase, risking missing opportunities for rapid improvement. Finding the right balance between caution and learning speed in the early stages is a decision that depends heavily on the domain and risk tolerance.
