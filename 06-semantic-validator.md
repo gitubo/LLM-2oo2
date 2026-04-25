@@ -8,6 +8,16 @@ La distinzione tra validazione sintattica e semantica è fondamentale: un piano 
 
 ---
 
+## Il Capability Registry come fonte di verità per la validazione
+
+Il Semantic Validator usa il Capability Registry come riferimento per una categoria specifica di controlli: la correttezza dei nodi trasversali rispetto alla risorsa su cui operano.
+
+Quando il validator incontra un nodo filter, risale la linked list fino al primo nodo contestuale e legge dal registry lo schema della risorsa corrispondente. Verifica che il campo su cui il filter opera esista nello schema, che il tipo del valore usato sia compatibile con il tipo dichiarato, e che il valore rispetti eventuali enum. Lo stesso vale per i nodi sort, che devono operare su campi esistenti nello schema.
+
+Questo tipo di controllo è strutturalmente diverso dagli invarianti assoluti e dalle regole dipendenti dall'intent: non richiede conoscenza del dominio applicativo ma solo la capacità di confrontare il piano con la definizione formale della risorsa. Il registry rende questo confronto possibile in modo deterministico.
+
+---
+
 ## Le categorie di controllo
 
 Il Semantic Validator esegue controlli che appartengono a due categorie con natura diversa, che è importante tenere distinte.

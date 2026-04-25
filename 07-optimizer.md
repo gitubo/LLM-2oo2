@@ -10,6 +10,28 @@ L'Optimizer risolve questo problema prima che raggiunga il Comparatore, applican
 
 ---
 
+## Il Capability Registry come input primario
+
+L'Optimizer non applica regole di riscrittura generiche: le sue decisioni sono guidate dal Capability Registry. Per ogni nodo contestuale del piano, l'Optimizer consulta la sezione supports del registry per quella risorsa e azione, e determina quali nodi trasversali successivi nella linked list possono essere collassati.
+
+Questo significa che l'Optimizer non ha logica di dominio codificata al suo interno: tutta la conoscenza su cosa è collassabile vive nel registry. Aggiungere il supporto nativo a un nuovo campo di filtro su un'API esterna richiede solo di aggiornare il registry — l'Optimizer lo gestisce automaticamente.
+
+La separazione è importante anche in negativo: se un campo non è dichiarato come supportato nel registry, l'Optimizer non lo collassa, anche se tecnicamente l'API potrebbe accettarlo. La dichiarazione nel registry è la precondizione necessaria e sufficiente.
+
+---
+
+## Il collasso dei nodi trasversali
+
+La trasformazione principale dell'Optimizer è il collasso dei nodi trasversali nel nodo contestuale precedente. Il piano prodotto dal Planner è intenzionalmente esplicito e non ottimizzato: ogni filter, sort, limit è un nodo separato nella linked list. L'Optimizer visita la lista e, per ogni nodo contestuale, verifica nel registry quali dei nodi trasversali successivi possono essere assorbiti.
+
+Un nodo filter può essere collassato se il campo su cui opera è dichiarato in supports.filter.fields del nodo contestuale precedente, e se l'operatore usato è tra quelli elencati per quel campo. Se entrambe le condizioni sono soddisfatte, il nodo filter viene rimosso dalla lista e i suoi parametri vengono aggiunti ai parametri del nodo contestuale, che li trasmetterà all'API esterna nella chiamata HTTP.
+
+Un nodo sort può essere collassato se il campo è elencato in supports.sort.fields. Un nodo limit può essere collassato se supports.limit non è false.
+
+I nodi trasversali che non soddisfano le condizioni rimangono nella lista come nodi client: verranno eseguiti localmente dopo che il nodo contestuale ha ricevuto la risposta dall'API esterna.
+
+---
+
 ## La canonicizzazione come obiettivo
 
 L'obiettivo formale dell'Optimizer è creare una funzione che mappa ogni classe di equivalenza di piani in un unico rappresentante. Due piani che producono lo stesso risultato quando eseguiti devono produrre lo stesso output dall'Optimizer.

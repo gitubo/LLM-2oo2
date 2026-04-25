@@ -10,6 +10,16 @@ Questa separazione è necessaria perché il Logical Binding avviene prima del Co
 
 ---
 
+## La relazione con il Capability Registry
+
+Nel contesto specifico di questa architettura, dove ogni nodo contestuale si traduce in una chiamata HTTP a un'API esterna definita nel registry, il Logical Binding e il registry si sovrappongono parzialmente.
+
+Il registry dichiara per ogni azione il contratto HTTP: metodo, endpoint, e convenzione di traduzione dei parametri. Questo è esattamente la decisione che il Logical Binding deve prendere per i nodi contestuali. In questo senso, il registry è già una forma di Logical Binding dichiarativo per la categoria di implementazione HTTP.
+
+La distinzione rimane rilevante per i casi in cui esistono più implementazioni possibili per la stessa risorsa — il registry descrive l'API esterna canonica, ma potrebbero esistere alternative come cache, repliche, o sistemi legacy che il Logical Binding può selezionare basandosi sui binding constraints dell'intent. Nei casi più semplici, dove una sola implementazione è disponibile per ogni risorsa, il Logical Binding si riduce a leggere il contratto HTTP dal registry.
+
+---
+
 ## Il problema che risolve
 
 Un nodo del piano con tipo "fetch" e entità "orders" può essere eseguito in modi diversi: una query diretta al database primario, una lettura dalla cache, una chiamata a un servizio di business logic, una query all'API di un sistema legacy. Queste implementazioni non sono equivalenti: hanno caratteristiche diverse di latenza, freschezza dei dati, side effect, e costo.
