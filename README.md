@@ -39,19 +39,19 @@ The design draws inspiration from the 2oo2 (two-out-of-two) pattern used in safe
 ## Flow
 
 ```
-Input utente (linguaggio naturale)
+User input (natural language)
            |
            v
    [ Intent Parser ]
-     Confidence < soglia?  -->  Clarification  -->  utente
+     Confidence < threshold?  -->  Clarification  -->  user
            |
            v
    [ LLM Prompt Builder ]  <--  Capability Registry
            |
-     (stesso contesto)
+     (same context)
      |             |
      v             v
- [ LLM A ]     [ LLM B ]        <- modelli diversi, parallelo
+ [ LLM A ]     [ LLM B ]        <- different models, parallel
      |             |
      v             v
 [ Pre-Validator ] [ Pre-Validator ]
@@ -71,26 +71,24 @@ Input utente (linguaggio naturale)
   fail? escalate   fail? escalate
      |             |
      v             v
-[ Optimizer ]  [ Optimizer ]    <- collasso nodi via registry
+[ Optimizer ]  [ Optimizer ]    <- node collapsing via registry
      |             |
      v             v
 [ Logical      [ Logical
-  Binding ]     Binding ]       <- contratto HTTP da registry
+  Binding ]     Binding ]       <- HTTP contract from registry
      |             |
      +------+------+
             |
             v
-      [ Comparatore ]
-      disaccordo?  -->  retry / escalate / human review
+      [ Comparator ]
+      disagreement?  -->  retry / escalate / human review
             |
             v
    [ Physical Binding ]
             |
             v
-         Esecuzione
+         Execution
 ```
-
-The full Mermaid diagram is available at [flow-diagram.mermaid](docs/flow-diagram.mermaid).
 
 ---
 
