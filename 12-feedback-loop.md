@@ -32,6 +32,8 @@ Not all signal sources have the same value for the feedback loop. Ordering them 
 
 **Intent Parser confidence** is a predictive signal: it does not say whether the output was wrong, but it says how likely it was to be wrong. Useful for prioritizing cases to review, not for feeding improvement directly.
 
+**End-user feedback** — a rating or explicit approval on the final response — is the most direct signal available at scale. It validates the full chain from intent parsing through execution from the perspective of the person who made the request. It is more scalable than operator review and more direct than execution ground truth, but it carries a specific risk: users may approve plausible-but-subtly-wrong results, or withhold approval for reasons unrelated to plan correctness (slow execution, UI issues). This signal should be weighted heavily but not exclusively, and a lightweight review process should guard against systematic false positives before it is used to update system logic. The Semantic Context Cache is the primary consumer of this signal.
+
 ---
 
 ## The three feedback loop rhythms
@@ -54,6 +56,8 @@ It has three distinct and equally important uses. As a basis for regression test
 
 The quality of the golden dataset is more important than its size. One hundred carefully selected and verified examples are more useful than one thousand automatically generated and unverified examples.
 
+Level 4 entries from the Semantic Context Cache — intent mappings confirmed by end-user approval — are natural candidates for the golden dataset. Each such entry includes the original query, the structured intent, and evidence of a correct, approved outcome, making the review process significantly lighter than constructing entries from scratch.
+
 ---
 
 ## The human review queue
@@ -70,7 +74,7 @@ Each review produces three outputs: a verdict on the specific case that resolves
 
 The main risk of the feedback loop is contamination: using unverified data that may be wrong as a quality signal.
 
-The **signal separation principle** establishes which sources may feed which types of updates. Human-verified signal (execution ground truth, explicit feedback, human review queue review) may feed updates to prompts, schemas, and rules. Unverified automatic signal (Comparator disagreement, low Intent Parser confidence) may only open a case in the human review queue or adjust operational thresholds — never directly update the system's logic.
+The **signal separation principle** establishes which sources may feed which types of updates. Human-verified signal (execution ground truth, explicit feedback, human review queue review, end-user approval after lightweight review) may feed updates to prompts, schemas, rules, and the Semantic Context Cache at its higher confidence levels. Unverified automatic signal (Comparator disagreement, low Intent Parser confidence, raw end-user approval without review) may only open a case in the human review queue, populate the cache at lower confidence levels, or adjust operational thresholds — never directly update the system's logic.
 
 This principle reduces the feedback loop's scalability but guarantees its correctness. It is a deliberate trade-off.
 

@@ -36,6 +36,8 @@ The selection of resources to include in the context is the Prompt Builder's mos
 
 Selection can happen in different ways depending on domain complexity. In domains with few resources, always including all of them is acceptable. In domains with many resources, the structured intent produced by the Intent Parser is used as a key: entities mentioned in the intent identify the primary resources, and correlated resources (if the registry declares them) are included automatically.
 
+When the Semantic Context Cache is available, the Prompt Builder uses its output as an additional input: the cache provides a ranked suggestion of which resources and fields have been relevant for similar intents in the past, allowing the Prompt Builder to construct a tighter, more precise context. The cache output is advisory — the Prompt Builder can override it if the registry has changed or if the cache entry's confidence is below threshold. When no cache entry exists, the Prompt Builder falls back to full intent-driven selection from the registry.
+
 This dependency on the structured intent further reinforces the importance of the Intent Parser: a misclassified intent can lead the Prompt Builder to include the wrong resources in the context, producing a plan generated on incorrect foundations.
 
 ---
