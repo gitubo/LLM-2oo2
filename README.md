@@ -58,10 +58,9 @@ User input (natural language)
            |
            v
    [ Intent Parser ]
-     Confidence < threshold?  -->  Clarification  -->  user
            |
            v
-[ Semantic Context Cache ]  <--  end-user feedback / execution signal
+[ Semantic Context Cache ]
            |
            v
    [ LLM Prompt Builder ]  <--  Capability Registry
@@ -69,11 +68,10 @@ User input (natural language)
      (same context)
      |             |
      v             v
- [ LLM A ]     [ LLM B ]        <- different models, parallel
+ [ LLM A ]     [ LLM B ]
      |             |
      v             v
 [ Pre-Validator ] [ Pre-Validator ]
-  fail? retry       fail? retry
      |             |
      v             v
 [ Sanitizer ]  [ Sanitizer ]
@@ -81,31 +79,28 @@ User input (natural language)
      v             v
 [ Full Schema  [ Full Schema
   Validator ]   Validator ]
-  fail? escalate   fail? escalate
      |             |
      v             v
 [ Semantic     [ Semantic
   Validator ]   Validator ]
-  fail? escalate   fail? escalate
      |             |
      v             v
-[ Optimizer ]  [ Optimizer ]    <- node collapsing via registry
+[ Optimizer ]  [ Optimizer ]
      |             |
      v             v
 [ Logical      [ Logical
-  Binding ]     Binding ]       <- HTTP contract from registry
+  Binding ]     Binding ]
      |             |
      +------+------+
             |
             v
       [ Comparator ]
-      disagreement?  -->  retry / escalate / human review
             |
             v
    [ Physical Binding ]
             |
             v
-        [ Executor ]            <- deterministic, decision-free
+        [ Executor ]
             |
             v
      [ User feedback ]  ------->  Semantic Context Cache
