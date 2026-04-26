@@ -46,6 +46,8 @@ The design draws inspiration from the 2oo2 (two-out-of-two) pattern used in safe
 | [12 — Feedback Loop](docs/12-feedback-loop.md) | Continuous improvement, golden dataset, drift detection |
 | [13 — Capability Registry](docs/13-capability-registry.md) | Declarative source of truth for resources, actions, and HTTP contracts |
 | [14 — LLM Prompt Builder](docs/14-llm-prompt-builder.md) | Registry-to-prompt translation for the Plan Generator |
+| [15 — Semantic Context Cache](docs/15-semantic-context-cache.md) | Intent-to-resource mapping cache with four levels of feedback integration |
+| [16 — Executor](docs/16-executor.md) | Deterministic, decision-free execution of the validated plan |
 
 ---
 
@@ -57,6 +59,9 @@ User input (natural language)
            v
    [ Intent Parser ]
      Confidence < threshold?  -->  Clarification  -->  user
+           |
+           v
+[ Semantic Context Cache ]  <--  end-user feedback / execution signal
            |
            v
    [ LLM Prompt Builder ]  <--  Capability Registry
@@ -100,7 +105,11 @@ User input (natural language)
    [ Physical Binding ]
             |
             v
-         Execution
+        [ Executor ]            <- deterministic, decision-free
+            |
+            v
+     [ User feedback ]  ------->  Semantic Context Cache
+                                  Feedback Loop
 ```
 
 ---
@@ -116,6 +125,8 @@ User input (natural language)
 **Separation of semantic and infrastructure decisions.** What to do (which tasks, in which order, with which constraints) is decided during planning and validation. How to do it physically (which endpoint, which connection, which instance) is decided after the plan has been approved, so that transient runtime conditions do not contaminate planning logic.
 
 **Explicit observability.** Every component emits structured events with a common trace_id. Every correction, every failure, every disagreement is logged with enough detail to reconstruct the full history of a single request. Observability is a design property, not an afterthought.
+
+**End-user feedback as a first-class signal.** A rating or approval on the final response is the only signal that validates the full chain — intent parsing, plan generation, validation, execution — from the perspective of the person who made the request. The Semantic Context Cache consumes this signal to progressively improve resource selection for similar future intents, and approved entries are natural candidates for the golden dataset.
 
 ---
 
@@ -133,7 +144,7 @@ Several established patterns address the same problem — reducing the probabili
 
 **Retrieval-augmented validation** checks output against an external knowledge base. Quality depends entirely on the coverage and correctness of that base.
 
-**Multi-model ensemble** is typically applied without a deterministic validation pipeline upstream of the comparison. Disagreement is measured on raw output, which means normalization problems produce false alarms and correlated errors go undetected.
+**Multi-model ensemble** — the pattern this architecture builds on — is typically applied without a deterministic validation pipeline upstream of the comparison. Disagreement is measured on raw output, which means normalization problems produce false alarms and correlated errors go undetected.
 
 **Selective human-in-the-loop** uses model confidence to decide when to escalate. Scalable only if high-uncertainty cases remain a small minority.
 
