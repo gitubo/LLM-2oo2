@@ -32,22 +32,22 @@ The design draws inspiration from the 2oo2 (two-out-of-two) pattern used in safe
 | Document | Description |
 |---|---|
 | [00 — Overview](00-overview.md) | Problem, principles, full flow, error handling, observability, feedback loop, known limits |
-| [01 — Intent Parser](docs/01-intent-parser.md) | Natural language to structured intent |
-| [02 — LLM Plan Generator](docs/02-llm-plan-generator.md) | Parallel plan generation on two independent channels |
-| [03 — Pre-Validator](docs/03-pre-validator.md) | Fast syntactic check, fail fast on unrecoverable output |
-| [04 — Sanitizer](docs/04-sanitizer.md) | Automatic correction of recoverable deviations |
-| [05 — Full Schema Validator](docs/05-full-schema-validator.md) | Complete JSON Schema validation |
-| [06 — Semantic Validator](docs/06-semantic-validator.md) | Domain rules and intent coherence check |
-| [07 — Optimizer](docs/07-optimizer.md) | Canonical form and registry-driven node collapsing |
-| [08 — Logical Binding](docs/08-logical-binding.md) | Semantic implementation selection |
-| [09 — Comparator](docs/09-comparator.md) | 2oo2 agreement check between the two channels |
-| [10 — Physical Binding](docs/10-physical-binding.md) | Runtime resource resolution |
-| [11 — Observability](docs/11-observability.md) | Logging, metrics, tracing, alerting model |
-| [12 — Feedback Loop](docs/12-feedback-loop.md) | Continuous improvement, golden dataset, drift detection |
-| [13 — Capability Registry](docs/13-capability-registry.md) | Declarative source of truth for resources, actions, and HTTP contracts |
-| [14 — LLM Prompt Builder](docs/14-llm-prompt-builder.md) | Registry-to-prompt translation for the Plan Generator |
-| [15 — Semantic Context Cache](docs/15-semantic-context-cache.md) | Intent-to-resource mapping cache with four levels of feedback integration |
-| [16 — Executor](docs/16-executor.md) | Deterministic, decision-free execution of the validated plan |
+| [01 — Intent Parser](01-intent-parser.md) | Natural language to structured intent |
+| [02 — LLM Plan Generator](02-llm-plan-generator.md) | Parallel plan generation on two independent channels |
+| [03 — Pre-Validator](03-pre-validator.md) | Fast syntactic check, fail fast on unrecoverable output |
+| [04 — Sanitizer](04-sanitizer.md) | Automatic correction of recoverable deviations |
+| [05 — Full Schema Validator](05-full-schema-validator.md) | Complete JSON Schema validation |
+| [06 — Semantic Validator](06-semantic-validator.md) | Domain rules and intent coherence check |
+| [07 — Optimizer](07-optimizer.md) | Canonical form and registry-driven node collapsing |
+| [08 — Logical Binding](08-logical-binding.md) | Semantic implementation selection |
+| [09 — Comparator](09-comparator.md) | 2oo2 agreement check between the two channels |
+| [10 — Physical Binding](10-physical-binding.md) | Runtime resource resolution |
+| [11 — Observability](11-observability.md) | Logging, metrics, tracing, alerting model |
+| [12 — Feedback Loop](12-feedback-loop.md) | Continuous improvement, golden dataset, drift detection |
+| [13 — Capability Registry](13-capability-registry.md) | Declarative source of truth for resources, actions, and HTTP contracts |
+| [14 — LLM Prompt Builder](14-llm-prompt-builder.md) | Registry-to-prompt translation for the Plan Generator |
+| [15 — Semantic Context Cache](15-semantic-context-cache.md) | Intent-to-resource mapping cache with four levels of feedback integration |
+| [16 — Executor](16-executor.md) | Deterministic, decision-free execution of the validated plan |
 
 ---
 
