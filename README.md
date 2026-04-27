@@ -31,7 +31,7 @@ The design draws inspiration from the 2oo2 (two-out-of-two) pattern used in safe
 
 | Document | Description |
 |---|---|
-| [00 — Overview](docs/00-overview.md) | Problem, principles, full flow, error handling, observability, feedback loop, known limits |
+| [00 — Overview](00-overview.md) | Problem, principles, full flow, error handling, observability, feedback loop, known limits |
 | [01 — Intent Parser](docs/01-intent-parser.md) | Natural language to structured intent |
 | [02 — LLM Plan Generator](docs/02-llm-plan-generator.md) | Parallel plan generation on two independent channels |
 | [03 — Pre-Validator](docs/03-pre-validator.md) | Fast syntactic check, fail fast on unrecoverable output |
